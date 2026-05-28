@@ -22,23 +22,34 @@
 
 <main>
   <section class="card glass emu-device-card" aria-label="Device">
-    <div class="emu-device">
-      <div class="emu-lcd-frame">
-        <canvas id="lcd" width="240" height="240" aria-label="v1 LCD"></canvas>
+    <!-- The chassis. Orange anodised body, landscape. Left: disc joystick.
+         Centre: recessed LCD. Right: 3 stacked round keys. Mirrors the
+         physical SeedHammer v1 device layout. -->
+    <div class="emu-chassis" role="group" aria-label="SeedHammer v1 device">
+      <!-- Left side: disc joystick. The disc is one big round element
+           with five overlapping hit zones (top/bottom/left/right/centre).
+           Each zone triggers a different gui.Button. -->
+      <div class="emu-joystick">
+        <button class="emu-disc-zone disc-up"     data-btn="0" aria-label="Joystick up">▲</button>
+        <button class="emu-disc-zone disc-left"   data-btn="2" aria-label="Joystick left">◀</button>
+        <button class="emu-disc-zone disc-center" data-btn="4" aria-label="Joystick press"></button>
+        <button class="emu-disc-zone disc-right"  data-btn="3" aria-label="Joystick right">▶</button>
+        <button class="emu-disc-zone disc-down"   data-btn="1" aria-label="Joystick down">▼</button>
       </div>
-      <div class="emu-controls">
-        <div class="emu-joystick" role="group" aria-label="Joystick">
-          <button class="emu-btn jb up" data-btn="0" aria-label="Up">▲</button>
-          <button class="emu-btn jb left" data-btn="2" aria-label="Left">◀</button>
-          <button class="emu-btn jb center" data-btn="4" aria-label="Center">●</button>
-          <button class="emu-btn jb right" data-btn="3" aria-label="Right">▶</button>
-          <button class="emu-btn jb down" data-btn="1" aria-label="Down">▼</button>
+
+      <!-- Centre: LCD recess. Native 240×240 canvas, displayed bigger
+           with image-rendering:pixelated so the upscale stays crisp. -->
+      <div class="emu-lcd-bezel">
+        <div class="emu-lcd-screen">
+          <canvas id="lcd" width="240" height="240" aria-label="v1 LCD"></canvas>
         </div>
-        <div class="emu-keys" role="group" aria-label="Side keys">
-          <button class="emu-btn key" data-btn="5" aria-label="Button 1">K1</button>
-          <button class="emu-btn key" data-btn="6" aria-label="Button 2">K2</button>
-          <button class="emu-btn key" data-btn="7" aria-label="Button 3">K3</button>
-        </div>
+      </div>
+
+      <!-- Right side: 3 round side keys, stacked. -->
+      <div class="emu-keys">
+        <button class="emu-key" data-btn="5" aria-label="Button 1 (back)">1</button>
+        <button class="emu-key" data-btn="6" aria-label="Button 2 (secondary)">2</button>
+        <button class="emu-key" data-btn="7" aria-label="Button 3 (confirm)">3</button>
       </div>
     </div>
   </section>
@@ -64,12 +75,11 @@
 
   <footer class="card glass footer-card">
     <p>
-      Phase 2 scaffolding stage — the GUI itself isn't lifted yet, but the
-      LCD canvas, button input layer, and platform.Platform contract are
-      all in place. The boot screen below shows the 240×240 frame rendered
-      by the Go runtime; press any mapped key (or click any button) and
-      the Go side echoes the event to the browser console.
-      See <a href="https://github.com/mineracks/seedhammer-v1-companion">the repo</a>.
+      Running the upstream SeedHammer v1 firmware GUI in your browser via
+      WebAssembly. The camera/QR-scan path is stubbed for now (the SeedSigner
+      sim handoff lands in Phase 2.5). The engraver path is null — you can
+      navigate, set up multisig, and prepare designs, but the browser can't
+      punch metal. See <a href="https://github.com/mineracks/seedhammer-v1-companion">the repo</a>.
     </p>
   </footer>
 </main>

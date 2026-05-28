@@ -1,84 +1,167 @@
-/* SeedHammer v1 emulator-specific styles, layered on top of the
-   composer's app.css for the shared shell/card/glass primitives. */
+/* SeedHammer v1 emulator — chassis styling. Mirrors the physical
+   device: orange anodised aluminium body in landscape orientation,
+   one disc joystick on the left, recessed LCD in the centre, three
+   round side keys on the right. */
 
-.emu-device-card { padding: 24px; }
-
-.emu-device {
+.emu-device-card {
+  padding: 24px;
   display: flex;
-  gap: 32px;
-  align-items: center;
-  flex-wrap: wrap;
   justify-content: center;
 }
 
-.emu-lcd-frame {
-  background: #0a0a0a;
-  border-radius: 18px;
-  padding: 18px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), inset 0 0 0 2px #2a2a2a;
+/* Outer chassis — orange anodised look, with subtle gradient + edge
+   highlight so it reads as machined metal rather than flat colour. */
+.emu-chassis {
+  --chassis-orange: #ff7a1f;
+  --chassis-edge: #c45a0f;
+  --chassis-corner-radius: 36px;
+
+  display: grid;
+  grid-template-columns: 130px 1fr 70px;
+  align-items: center;
+  gap: 18px;
+  padding: 22px 28px;
+
+  background:
+    linear-gradient(180deg, #ff8a30 0%, var(--chassis-orange) 50%, #ed6b14 100%);
+  border-radius: var(--chassis-corner-radius);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.35),
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.18),
+    inset 0 2px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.22);
+  max-width: 720px;
+  width: 100%;
+}
+
+/* ─── LCD recess ─────────────────────────────────────────────────── */
+
+.emu-lcd-bezel {
+  background:
+    linear-gradient(180deg, #1a1a1a 0%, #0a0a0a 100%);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.7),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.emu-lcd-screen {
+  background: #000;
+  border-radius: 4px;
+  overflow: hidden;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-width: 320px;
+  max-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 #lcd {
   display: block;
-  width: 320px;
-  height: 320px;
+  width: 100%;
+  height: 100%;
   image-rendering: pixelated;
+  image-rendering: crisp-edges;
   background: #000;
-  border-radius: 6px;
 }
 
-.emu-controls {
-  display: grid;
-  grid-template-columns: auto auto;
-  gap: 28px;
-  align-items: center;
-}
+/* ─── Disc joystick (left) ───────────────────────────────────────── */
 
+/* The disc itself: a round metal-look button. Five overlapping
+   square-ish hit zones inside cover the 5 joystick directions. The
+   visible disc is a circle; we hide the .disc-zone rectangles
+   underneath so users see one cohesive control with arrow hints. */
 .emu-joystick {
-  display: grid;
-  grid-template-columns: repeat(3, 56px);
-  grid-template-rows: repeat(3, 56px);
-  gap: 4px;
+  position: relative;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, #f8f4ee 0%, #c8c2b6 65%, #8a857a 100%);
+  box-shadow:
+    inset 0 -3px 6px rgba(0, 0, 0, 0.25),
+    inset 0 3px 3px rgba(255, 255, 255, 0.6),
+    0 6px 16px rgba(0, 0, 0, 0.45);
+  justify-self: center;
 }
-.emu-joystick .jb.up     { grid-column: 2; grid-row: 1; }
-.emu-joystick .jb.left   { grid-column: 1; grid-row: 2; }
-.emu-joystick .jb.center { grid-column: 2; grid-row: 2; }
-.emu-joystick .jb.right  { grid-column: 3; grid-row: 2; }
-.emu-joystick .jb.down   { grid-column: 2; grid-row: 3; }
+.emu-disc-zone {
+  position: absolute;
+  background: transparent;
+  border: none;
+  color: rgba(60, 50, 35, 0.7);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  transition: background 0.08s;
+}
+.emu-disc-zone:hover {
+  color: rgba(40, 30, 15, 1);
+}
+.emu-disc-zone.pressed {
+  background: rgba(0, 0, 0, 0.18);
+}
+.disc-up     { top: 0;    left: 33%;  width: 34%; height: 34%; border-radius: 50% 50% 8px 8px; }
+.disc-down   { bottom: 0; left: 33%;  width: 34%; height: 34%; border-radius: 8px 8px 50% 50%; }
+.disc-left   { top: 33%;  left: 0;    width: 34%; height: 34%; border-radius: 50% 8px 8px 50%; }
+.disc-right  { top: 33%;  right: 0;   width: 34%; height: 34%; border-radius: 8px 50% 50% 8px; }
+.disc-center {
+  top: 30%; left: 30%; width: 40%; height: 40%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffffff 0%, #d4cfc4 60%, #8a857a 100%);
+  box-shadow:
+    inset 0 -2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 2px 2px rgba(255, 255, 255, 0.6);
+}
+.disc-center.pressed {
+  background: radial-gradient(circle at 35% 30%, #d8d2c5 0%, #b0a99b 60%, #6f6a5d 100%);
+}
+
+/* ─── Side keys (right) ──────────────────────────────────────────── */
 
 .emu-keys {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-.emu-btn {
-  background: var(--surface-strong);
-  border: 1px solid var(--hairline);
-  border-radius: 12px;
-  color: var(--text);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  font-size: 18px;
-  user-select: none;
-  transition: transform 0.05s, background 0.1s;
-  display: flex;
+  gap: 16px;
   align-items: center;
-  justify-content: center;
 }
-.emu-btn:active,
-.emu-btn.pressed {
-  background: var(--accent);
-  color: var(--accent-text);
-  transform: scale(0.94);
-  box-shadow: 0 2px 8px rgb(255 136 0 / 0.4);
+.emu-key {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  font: inherit;
+  font-weight: 700;
+  font-size: 18px;
+  color: rgba(60, 50, 35, 0.85);
+  background:
+    radial-gradient(circle at 35% 30%, #fafafa 0%, #cdc8bd 70%, #8a857a 100%);
+  box-shadow:
+    0 4px 10px rgba(0, 0, 0, 0.35),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.22),
+    inset 0 2px 2px rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.05s;
+}
+.emu-key:active,
+.emu-key.pressed {
+  transform: translateY(1px);
+  background:
+    radial-gradient(circle at 35% 30%, #d4cfc4 0%, #a8a297 70%, #6f6a5d 100%);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.35),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.22),
+    inset 0 2px 2px rgba(255, 255, 255, 0.4);
 }
 
-.emu-btn.key {
-  width: 64px;
-  height: 56px;
-  font-size: 14px;
-}
+/* ─── Keymap reference (unchanged) ───────────────────────────────── */
 
 .emu-keymap {
   width: 100%;
@@ -101,4 +184,16 @@
   font-family: ui-monospace, monospace;
   font-size: 12px;
   display: inline-block;
+}
+
+/* ─── Responsive ─────────────────────────────────────────────────── */
+
+@media (max-width: 600px) {
+  .emu-chassis {
+    grid-template-columns: 90px 1fr 56px;
+    gap: 12px;
+    padding: 16px 18px;
+  }
+  .emu-joystick { width: 90px; height: 90px; }
+  .emu-key { width: 38px; height: 38px; font-size: 15px; }
 }
