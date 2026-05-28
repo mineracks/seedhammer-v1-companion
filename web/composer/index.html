@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a1a1a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f5f5f5" media="(prefers-color-scheme: light)">
+<title>SeedHammer v1 — plate composer</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36.6 36.6'%3E%3Crect width='36.6' height='36.6' rx='7' fill='%23ff8800'/%3E%3Cg fill='%23fff'%3E%3Cpath d='M12.4,29.5V0H4.6C2,0,0,2,0,4.6V24l4.6-2.2L12.4,29.5z'/%3E%3Cpath d='M6.2,29.1L0,24v8c0,2.5,2,4.6,4.6,4.6h9.6L1.8,31.5L6.2,29.1z'/%3E%3Cpath d='M12.4,29.5L8.7,31.3 14.2,36.6 18.3,36.6 12.4,29.5z'/%3E%3Cpath d='M24.2,29.5V0H32c2.6,0,4.6,2,4.6,4.6V24L32,21.8L24.2,29.5z'/%3E%3Cpath d='M30.4,29.1l6.2-5.1v8c0,2.5-2,4.6-4.6,4.6h-9.6l12.4-5.1L30.4,29.1z'/%3E%3Cpath d='M24.2,29.5L27.9,31.3 22.4,36.6 18.3,36.6 24.2,29.5z'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<noscript>This app requires JavaScript.</noscript>
+
+<header class="bar glass">
+  <h1>SeedHammer v1 Composer</h1>
+  <div class="bar-actions">
+    <span id="status" class="status" aria-live="polite">Loading…</span>
+  </div>
+</header>
+
+<main>
+  <section class="card glass" aria-label="Plate">
+    <div class="editor-head">
+      <h2>Plate</h2>
+      <small>Pick the stainless plate you'll engrave on.</small>
+    </div>
+    <div role="radiogroup" aria-label="Plate type" id="plate-types"></div>
+  </section>
+
+  <section class="card glass editor-card" aria-label="Block text editor">
+    <div class="editor-head">
+      <h2>Block text</h2>
+      <small>One text block per row. ASCII only. SVG paths come later.</small>
+    </div>
+    <ol id="lines" class="lines"></ol>
+  </section>
+
+  <section class="card glass preview-card" aria-label="SH1E output">
+    <div class="preview-wrap">
+      <div class="preview-meta">
+        <span id="size-meter">0 B</span>
+        <span id="size-cap">/ 65535 B</span>
+      </div>
+      <pre id="output" class="error" hidden></pre>
+    </div>
+  </section>
+
+  <section class="card glass actions-card" aria-label="Actions">
+    <button id="btn-generate" class="btn primary" disabled>
+      <span class="btn-label">Generate SH1E</span>
+      <span class="btn-sub">test build — bytes shown above</span>
+    </button>
+  </section>
+
+  <footer class="card glass footer-card">
+    <p>This is an early Phase&nbsp;1 build. Today it proves the Go-to-WASM pipeline works and the SH1E encoder produces canonical bytes. Live preview, QR display, and the SeedSigner sim land in following commits. See <a href="https://github.com/mineracks/seedhammer-v1-companion">the repo</a> for the roadmap.</p>
+  </footer>
+</main>
+
+<script src="./wasm_exec.js"></script>
+<script src="./app.js" type="module"></script>
+</body>
+</html>

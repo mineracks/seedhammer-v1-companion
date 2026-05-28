@@ -1,0 +1,304 @@
+/* SeedHammer II phone webapp — liquid-glass surfaces, system-theme-aware. */
+
+:root {
+  color-scheme: light dark;
+  --bg-gradient-from: #ffd9a8;
+  --bg-gradient-to:   #c9c1ff;
+  --surface:          rgba(255, 255, 255, 0.55);
+  --surface-strong:   rgba(255, 255, 255, 0.72);
+  --hairline:         color-mix(in srgb, currentColor 14%, transparent);
+  --text:             oklch(20% 0 0);
+  --text-dim:         oklch(40% 0 0);
+  --accent:           #ff8800;
+  --accent-text:      #ffffff;
+  --error:            #c92a2a;
+  --radius:           16px;
+  --pad:              16px;
+  --gap:              12px;
+  --shadow:           0 8px 24px rgb(0 0 0 / 0.08);
+  --blur:             backdrop-filter: blur(24px) saturate(180%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-gradient-from: #20153a;
+    --bg-gradient-to:   #2b1a08;
+    --surface:          rgba(20, 20, 20, 0.55);
+    --surface-strong:   rgba(20, 20, 20, 0.72);
+    --hairline:         color-mix(in srgb, currentColor 22%, transparent);
+    --text:             oklch(96% 0 0);
+    --text-dim:         oklch(70% 0 0);
+    --shadow:           0 8px 24px rgb(0 0 0 / 0.5);
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+  background:
+    radial-gradient(ellipse 100% 60% at 0% 0%, var(--bg-gradient-from), transparent 60%),
+    radial-gradient(ellipse 100% 60% at 100% 100%, var(--bg-gradient-to), transparent 60%),
+    var(--surface-strong);
+  background-attachment: fixed;
+  color: var(--text);
+  min-height: 100vh;
+  min-height: 100dvh;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.glass {
+  background: var(--surface);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.bar {
+  position: sticky;
+  top: env(safe-area-inset-top, 0);
+  margin: var(--pad);
+  padding: 12px var(--pad);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap);
+  z-index: 10;
+}
+
+.bar h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.status {
+  font-size: 13px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+main {
+  padding: 0 var(--pad) var(--pad);
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--gap);
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+@media (min-width: 720px) {
+  main {
+    grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.2fr);
+    grid-template-areas:
+      "tabs    tabs"
+      "preview editor"
+      "preview actions"
+      "footer  footer";
+  }
+  .card.tabs-card     { grid-area: tabs;    }
+  .card.preview-card  { grid-area: preview; align-self: start; }
+  .card.editor-card   { grid-area: editor;  }
+  .card.actions-card  { grid-area: actions; }
+  .card.footer-card   { grid-area: footer;  }
+}
+
+.card { padding: var(--pad); }
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--hairline);
+  padding: 4px;
+  border-radius: calc(var(--radius) - 8px);
+}
+.tab {
+  flex: 1;
+  font: inherit;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius) - 10px);
+  padding: 8px 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.tab.active {
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.1);
+}
+
+.preview-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* The preview card visually represents the physical 85 mm × 85 mm plate:
+   solid grey, proportional 3/85 corner radius matching the actual
+   outerMargin. The SVG inside renders the same plate rect; the two layers
+   align pixel-perfectly. */
+.preview {
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  border-radius: calc(100% * 3 / 85);
+  background: var(--plate-fill, #e8e8e8);
+  border: 1px solid var(--plate-stroke, #b0b0b0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+@media (prefers-color-scheme: dark) {
+  .preview {
+    background: var(--plate-fill, oklch(28% 0 0));
+    border-color: var(--plate-stroke, oklch(50% 0 0));
+  }
+}
+.preview svg {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+}
+.preview:empty::before {
+  content: "Plate preview";
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.preview-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  padding: 0 4px;
+}
+
+.editor-head {
+  margin-bottom: 12px;
+}
+.editor-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.editor-head small {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.lines {
+  list-style: none;
+  counter-reset: line;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lines li {
+  counter-increment: line;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lines li::before {
+  content: counter(line, decimal-leading-zero);
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  width: 1.8em;
+  text-align: right;
+}
+.lines input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  background: var(--surface-strong);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+.lines input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+
+.file-pick {
+  display: inline-block;
+  cursor: pointer;
+}
+.file-pick input { display: none; }
+.file-pick span {
+  display: inline-block;
+  padding: 10px 16px;
+  background: var(--surface-strong);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.error {
+  color: var(--error);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  margin: 12px 0 0;
+}
+
+.actions-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 15px;
+  background: var(--surface-strong);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 12px 16px;
+  color: var(--text);
+  cursor: pointer;
+  transition: transform 0.05s;
+}
+.btn:active:not(:disabled) { transform: scale(0.985); }
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgb(255 136 0 / 0.35);
+}
+.btn .btn-sub {
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.footer-card {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.footer-card p { margin: 0; }
+.footer-card code { font-size: 11px; }
