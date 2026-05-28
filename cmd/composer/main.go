@@ -16,6 +16,7 @@ import (
 	"strings"
 	"syscall/js"
 
+	"github.com/kortschak/qr"
 	"github.com/mineracks/seedhammer-v1-companion/engrave/wire/sh1e"
 )
 
@@ -26,6 +27,7 @@ func main() {
 	js.Global().Set("composerPlateTypes", js.FuncOf(exportPlateTypes))
 	js.Global().Set("composerEncodeText", js.FuncOf(exportEncodeText))
 	js.Global().Set("composerPreviewText", js.FuncOf(exportPreviewText))
+	js.Global().Set("composerQR", js.FuncOf(exportQR))
 	// Block forever so the Go runtime keeps the exported funcs alive.
 	select {}
 }
@@ -237,6 +239,92 @@ func exportPreviewText(this js.Value, args []js.Value) any {
 		)
 	}
 
+	sb.WriteString(`</svg>`)
+	return sb.String()
+}
+
+// exportQR: composerQR(plateType:number, lines:string[]) -> {svg:string, modules:number, bytes:number}
+//
+// Encodes the design as SH1E, then encodes those bytes as a QR code at
+// medium error-correction level (15% damage tolerance — a sensible balance
+// for a phone-screen-to-camera handoff). The returned SVG is a full QR
+// matrix, drawn as one rect per dark module against a white background.
+//
+// JS uses this to show a scannable QR to the SeedHammer v1 camera.
+func exportQR(this js.Value, args []js.Value) any {
+	plateType, lines, err := readArgs(args)
+	if err != nil {
+		return jsError(err)
+	}
+	layout := layoutLines(lines)
+	blocks := make([]sh1e.TextBlock, 0, len(layout))
+	for _, l := range layout {
+		blocks = append(blocks, sh1e.TextBlock{
+			FontID:    l.FontID,
+			Size:      l.Size,
+			XMM:       l.XMM,
+			YMM:       l.YMM,
+			Alignment: l.Alignment,
+			Text:      l.Text,
+		})
+	}
+	payload, err := sh1e.Encode(sh1e.Design{
+		PlateType:  plateType,
+		TextBlocks: blocks,
+	})
+	if err != nil {
+		return jsError(err)
+	}
+
+	code, err := qr.Encode(string(payload), qr.M)
+	if err != nil {
+		return jsError(fmt.Errorf("qr encode: %w", err))
+	}
+	return js.ValueOf(map[string]any{
+		"svg":     qrSVG(code),
+		"modules": code.Size,
+		"bytes":   len(payload),
+	})
+}
+
+// qrSVG renders a kortschak/qr Code as an inline SVG string. Uses
+// viewBox = module-count so callers can size by CSS without distortion.
+// One <rect> per dark module, against a white background.
+func qrSVG(code *qr.Code) string {
+	dim := code.Size
+	// Quiet zone: per spec, 4 modules of white margin around the QR. We
+	// embed it into the viewBox so the consumer doesn't have to add padding.
+	const quiet = 4
+	total := dim + 2*quiet
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb,
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" shape-rendering="crispEdges">`,
+		total, total,
+	)
+	// White background covers the whole canvas including the quiet zone.
+	fmt.Fprintf(&sb, `<rect width="%d" height="%d" fill="#fff"/>`, total, total)
+	// Black modules. Coalesce consecutive horizontal runs into a single rect
+	// to shrink the SVG payload — typical QR has ~50% dark modules; per-cell
+	// rects would be ~half the matrix count.
+	for y := 0; y < dim; y++ {
+		x := 0
+		for x < dim {
+			if !code.Black(x, y) {
+				x++
+				continue
+			}
+			runStart := x
+			for x < dim && code.Black(x, y) {
+				x++
+			}
+			runLen := x - runStart
+			fmt.Fprintf(&sb,
+				`<rect x="%d" y="%d" width="%d" height="1" fill="#000"/>`,
+				runStart+quiet, y+quiet, runLen,
+			)
+		}
+	}
 	sb.WriteString(`</svg>`)
 	return sb.String()
 }

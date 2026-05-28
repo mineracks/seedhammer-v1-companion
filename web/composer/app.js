@@ -15,6 +15,11 @@ const els = {
   size: document.getElementById("size-meter"),
   output: document.getElementById("output"),
   btnBytes: document.getElementById("btn-bytes"),
+  btnQR: document.getElementById("btn-qr"),
+  qrOverlay: document.getElementById("qr-overlay"),
+  qrCanvas: document.getElementById("qr-canvas"),
+  qrInfo: document.getElementById("qr-info"),
+  qrClose: document.getElementById("qr-close"),
 };
 
 // Build inputs for the largest possible plate; hide rows that don't fit
@@ -192,11 +197,53 @@ async function loadWasm() {
   buildLineInputs();
   wasmReady = true;
   els.btnBytes.disabled = false;
+  els.btnQR.disabled = false;
   setStatus(`Ready — ${v}`);
   refresh(); // initial empty-plate render
 }
 
+function showQR() {
+  if (!wasmReady) return;
+  const lines = readLines();
+  if (lines.length === 0) {
+    setStatus("Enter at least one line first", true);
+    return;
+  }
+  try {
+    const result = globalThis.composerQR(plateType, lines);
+    els.qrCanvas.innerHTML = result.svg;
+    els.qrInfo.textContent = `${result.bytes} B SH1E → QR ${result.modules}×${result.modules}`;
+    els.qrOverlay.hidden = false;
+    els.qrOverlay.setAttribute("aria-hidden", "false");
+    setStatus(`Ready — v${composerVersionString()}`);
+  } catch (e) {
+    setStatus(`QR encode failed: ${e?.message ?? e}`, true);
+  }
+}
+
+function hideQR() {
+  els.qrOverlay.hidden = true;
+  els.qrOverlay.setAttribute("aria-hidden", "true");
+  els.qrCanvas.innerHTML = "";
+}
+
+let _ver;
+function composerVersionString() {
+  if (!_ver) _ver = globalThis.composerVersion().replace(/^v/, "");
+  return _ver;
+}
+
 els.btnBytes.addEventListener("click", showBytes);
+els.btnQR.addEventListener("click", showQR);
+els.qrClose.addEventListener("click", hideQR);
+els.qrOverlay.addEventListener("click", (e) => {
+  // Click outside the inner card dismisses; click inside (e.g. on the QR
+  // itself) does nothing.
+  if (e.target === els.qrOverlay) hideQR();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !els.qrOverlay.hidden) hideQR();
+});
 
 loadWasm().catch((e) => {
   setStatus(`Boot failed: ${e?.message ?? e}`, true);

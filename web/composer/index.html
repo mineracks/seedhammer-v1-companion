@@ -53,12 +53,26 @@
   </section>
 
   <section class="card glass actions-card" aria-label="Output">
+    <button id="btn-qr" class="btn primary" disabled>
+      <span class="btn-label">Show QR</span>
+      <span class="btn-sub">hold up to the SeedHammer v1 camera</span>
+    </button>
     <button id="btn-bytes" class="btn" disabled>
       <span class="btn-label">Show SH1E bytes</span>
       <span class="btn-sub">debug — hex dump below</span>
     </button>
     <pre id="output" class="error" hidden></pre>
   </section>
+
+  <div id="qr-overlay" hidden aria-hidden="true" role="dialog">
+    <div class="qr-overlay-card">
+      <div id="qr-canvas"></div>
+      <div class="qr-overlay-meta">
+        <span id="qr-info">—</span>
+        <button id="qr-close" class="btn small">Close</button>
+      </div>
+    </div>
+  </div>
 
   <footer class="card glass footer-card">
     <p>This is an early Phase&nbsp;1 build. SH1E encoder + live layout preview both wired in. Next: pixel-faithful Comfortaa rasterisation, QR display, SVG path mode, the SeedSigner sim. See <a href="https://github.com/mineracks/seedhammer-v1-companion">the repo</a>.</p>
