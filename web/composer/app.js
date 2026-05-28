@@ -232,11 +232,15 @@ async function onSVGFile(ev) {
     const text = await f.text();
     const doc = new DOMParser().parseFromString(text, "image/svg+xml");
     if (doc.querySelector("parsererror")) throw new Error("file isn't valid SVG");
-    const ds = [...doc.querySelectorAll("path")]
+    const root = doc.documentElement;
+    // Auto-convert shapes (<rect>, <circle>, <ellipse>, <line>, <polyline>,
+    // <polygon>) to <path d="..."/> so users don't have to flatten manually.
+    rewriteShapesToPaths(doc, root);
+    const ds = [...root.querySelectorAll("path")]
       .map((p) => p.getAttribute("d"))
       .filter(Boolean);
     if (ds.length === 0) {
-      throw new Error("no <path d=\"...\"> elements found — flatten shapes to paths in your editor first");
+      throw new Error("file contains no drawable shapes (no paths, rects, circles, lines, polygons)");
     }
     svgPaths = ds;
     els.svgSummary.textContent = `${f.name} — ${ds.length} path${ds.length === 1 ? "" : "s"}, ${ds.reduce((n, d) => n + d.length, 0)} chars total`;
@@ -246,6 +250,85 @@ async function onSVGFile(ev) {
     els.svgError.textContent = String(e?.message ?? e);
     svgPaths = [];
     refresh();
+  }
+}
+
+// rewriteShapesToPaths converts every SVG primitive shape into an equivalent
+// <path d="..."/> element. Lifted (with cleanup) from Gangleri42's webnfc
+// app.js — same algorithm, same numeric constants (0.5522847498 is the
+// Bezier control-point ratio for approximating a quarter-circle).
+//
+// Transforms are NOT baked here — that needs DOM measurement via getCTM
+// and a separate pass. Users with transform-heavy SVG should flatten in
+// their editor (Inkscape: Object → Path, then Flatten Transforms).
+function rewriteShapesToPaths(doc, root) {
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const replace = (el, d) => {
+    const p = doc.createElementNS(SVG_NS, "path");
+    p.setAttribute("d", d);
+    const t = el.getAttribute("transform");
+    if (t) p.setAttribute("transform", t);
+    el.parentNode.replaceChild(p, el);
+  };
+  for (const r of [...root.querySelectorAll("rect")]) {
+    const x = +r.getAttribute("x") || 0;
+    const y = +r.getAttribute("y") || 0;
+    const w = +r.getAttribute("width") || 0;
+    const h = +r.getAttribute("height") || 0;
+    if (!w || !h) { r.remove(); continue; }
+    replace(r, `M${x} ${y} L${x + w} ${y} L${x + w} ${y + h} L${x} ${y + h} Z`);
+  }
+  for (const c of [...root.querySelectorAll("circle")]) {
+    const cx = +c.getAttribute("cx") || 0;
+    const cy = +c.getAttribute("cy") || 0;
+    const r = +c.getAttribute("r") || 0;
+    if (!r) { c.remove(); continue; }
+    const k = 0.5522847498 * r;
+    replace(c, [
+      `M${cx - r} ${cy}`,
+      `C${cx - r} ${cy - k}, ${cx - k} ${cy - r}, ${cx} ${cy - r}`,
+      `C${cx + k} ${cy - r}, ${cx + r} ${cy - k}, ${cx + r} ${cy}`,
+      `C${cx + r} ${cy + k}, ${cx + k} ${cy + r}, ${cx} ${cy + r}`,
+      `C${cx - k} ${cy + r}, ${cx - r} ${cy + k}, ${cx - r} ${cy}`,
+      "Z",
+    ].join(" "));
+  }
+  for (const e of [...root.querySelectorAll("ellipse")]) {
+    const cx = +e.getAttribute("cx") || 0;
+    const cy = +e.getAttribute("cy") || 0;
+    const rx = +e.getAttribute("rx") || 0;
+    const ry = +e.getAttribute("ry") || 0;
+    if (!rx || !ry) { e.remove(); continue; }
+    const kx = 0.5522847498 * rx;
+    const ky = 0.5522847498 * ry;
+    replace(e, [
+      `M${cx - rx} ${cy}`,
+      `C${cx - rx} ${cy - ky}, ${cx - kx} ${cy - ry}, ${cx} ${cy - ry}`,
+      `C${cx + kx} ${cy - ry}, ${cx + rx} ${cy - ky}, ${cx + rx} ${cy}`,
+      `C${cx + rx} ${cy + ky}, ${cx + kx} ${cy + ry}, ${cx} ${cy + ry}`,
+      `C${cx - kx} ${cy + ry}, ${cx - rx} ${cy + ky}, ${cx - rx} ${cy}`,
+      "Z",
+    ].join(" "));
+  }
+  for (const ln of [...root.querySelectorAll("line")]) {
+    const x1 = +ln.getAttribute("x1") || 0;
+    const y1 = +ln.getAttribute("y1") || 0;
+    const x2 = +ln.getAttribute("x2") || 0;
+    const y2 = +ln.getAttribute("y2") || 0;
+    replace(ln, `M${x1} ${y1} L${x2} ${y2}`);
+  }
+  for (const poly of [...root.querySelectorAll("polygon, polyline")]) {
+    const pts = (poly.getAttribute("points") || "")
+      .split(/[\s,]+/)
+      .filter(Boolean)
+      .map(Number);
+    if (pts.length < 4) { poly.remove(); continue; }
+    const segs = [];
+    for (let i = 0; i < pts.length; i += 2) {
+      segs.push(`${i === 0 ? "M" : "L"}${pts[i]} ${pts[i + 1]}`);
+    }
+    if (poly.tagName.toLowerCase() === "polygon") segs.push("Z");
+    replace(poly, segs.join(" "));
   }
 }
 

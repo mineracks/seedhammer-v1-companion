@@ -328,21 +328,79 @@ func exportQRSVG(this js.Value, args []js.Value) any {
 	})
 }
 
-// writePlateChrome emits the plate outline + margin guides into sb. Shared
-// between Text-mode and SVG-mode previews.
+// holeInsetMM is how far the centre of each M3 mounting hole sits from
+// the nearest plate edge. Sits roughly mid-way between outerMargin (3mm)
+// and innerMargin (10mm) — the holes are physically drilled in that band
+// on real SeedHammer SH-01/02/03 plates so engraving must avoid it.
+const holeInsetMM = 6.5
+
+// holeDiameterMM is the visual diameter of each mounting hole. The actual
+// M3 clearance hole is 3.2mm but 3.5mm gives the preview better contrast
+// against the plate fill.
+const holeDiameterMM = 3.5
+
+// holeDangerDiameterMM is the radius of the dashed "no-engrave" exclusion
+// ring drawn around each hole. Mirrors the practical margin a user should
+// leave so the engrave head doesn't catch on the screw head or punch
+// directly onto stainless that's resting on a nut.
+const holeDangerDiameterMM = 7.0
+
+// holePositions returns the mounting-hole centres for a given plate.
+// SH-01 (Small) and SH-02 (Square) have 4 corner holes; SH-03 (Large)
+// adds 2 mid-edge holes on the long sides for extra clamping force
+// (the 134mm length needs more than 4-corner support).
+func holePositions(dims plateDims) [][2]float64 {
+	w, h := dims.W, dims.H
+	corners := [][2]float64{
+		{holeInsetMM, holeInsetMM},
+		{w - holeInsetMM, holeInsetMM},
+		{w - holeInsetMM, h - holeInsetMM},
+		{holeInsetMM, h - holeInsetMM},
+	}
+	// Threshold: any plate taller than ~120mm is Large-class and gets
+	// the two extra mid-edge holes. SH-03 is 134mm; SH-02 is 85mm so it
+	// falls below the threshold.
+	if h >= 120 {
+		corners = append(corners,
+			[2]float64{holeInsetMM, h / 2},
+			[2]float64{w - holeInsetMM, h / 2},
+		)
+	}
+	return corners
+}
+
+// writePlateChrome emits the plate outline + margin guides + mounting
+// holes into sb. Shared between Text-mode and SVG-mode previews.
 func writePlateChrome(sb *strings.Builder, dims plateDims) {
+	// Plate body.
 	fmt.Fprintf(sb,
 		`<rect x="0.5" y="0.5" width="%g" height="%g" rx="3" ry="3" fill="#ececec" stroke="#444" stroke-width="0.4"/>`,
 		dims.W-1, dims.H-1,
 	)
+	// outer-margin guide (no-engrave boundary at 3mm)
 	fmt.Fprintf(sb,
 		`<rect x="%g" y="%g" width="%g" height="%g" fill="none" stroke="#999" stroke-width="0.15" stroke-dasharray="0.6,0.6"/>`,
 		outerMarginMM, outerMarginMM, dims.W-2*outerMarginMM, dims.H-2*outerMarginMM,
 	)
+	// inner-margin guide (safe text area at 10mm)
 	fmt.Fprintf(sb,
 		`<rect x="%g" y="%g" width="%g" height="%g" fill="none" stroke="#666" stroke-width="0.15" stroke-dasharray="0.4,0.4"/>`,
 		innerMarginMM, innerMarginMM, dims.W-2*innerMarginMM, dims.H-2*innerMarginMM,
 	)
+	// Mounting holes — drawn LAST so they sit on top of the margin guides.
+	// Each hole gets a dashed "danger" exclusion ring + the hole itself,
+	// rendered with a contrasting fill so it reads as "metal removed
+	// here, leave clear" at a glance.
+	for _, h := range holePositions(dims) {
+		fmt.Fprintf(sb,
+			`<circle cx="%g" cy="%g" r="%g" fill="none" stroke="#c92a2a" stroke-width="0.15" stroke-dasharray="0.5,0.5" opacity="0.7"/>`,
+			h[0], h[1], holeDangerDiameterMM/2,
+		)
+		fmt.Fprintf(sb,
+			`<circle cx="%g" cy="%g" r="%g" fill="#777" stroke="#222" stroke-width="0.2"/>`,
+			h[0], h[1], holeDiameterMM/2,
+		)
+	}
 }
 
 // faceForFont returns the vector engraving face used for a given SH1E
