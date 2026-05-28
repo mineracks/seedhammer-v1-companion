@@ -2,116 +2,250 @@
 
 // Command emulator is a browser-based SeedHammer v1 firmware runner.
 //
-// Phase 2 scaffolding stage. This binary boots a 240×240 canvas-backed
-// LCD mock and an 8-button input layer that maps keyboard events to the
-// v1's joystick + 3 keys. The real firmware GUI lift (upstream's gui/
-// package + its assets/layout/op/saver/text/widget subpackages) lands in
-// a follow-up commit; today this stage proves the build pipeline + the
-// platform/v1.Platform interface contract.
+// Loads the upstream v1.3.0 gui package and drives it through a
+// browser-side Platform implementation:
+//   - Display: a 240×240 canvas, painted from Go RGBA via JS callback
+//   - Input: keyboard + on-screen button events through gui.ButtonEvent
+//   - Engraver: a no-op stub (the browser doesn't drive real hardware)
+//   - Camera: stub that emits empty FrameEvents (real QR-scan handoff
+//     lands once the SeedSigner sim wiring lands in Phase 2.5)
 //
 // Build:
 //
 //	GOOS=js GOARCH=wasm go build -o ./web/emulator/emulator.wasm ./cmd/emulator
-//
-// The static shell (HTML/CSS/JS) lives under web/emulator/. JS exports
-// documented in web/emulator/app.js.
 package main
 
 import (
-	"fmt"
+	"errors"
 	"image"
 	"image/color"
 	"image/draw"
-	"strconv"
+	"sync"
 	"syscall/js"
+	"time"
 
-	"github.com/mineracks/seedhammer-v1-companion/platform/v1"
+	"github.com/mineracks/seedhammer-v1-companion/backup"
+	"github.com/mineracks/seedhammer-v1-companion/engrave"
+	"github.com/mineracks/seedhammer-v1-companion/gui"
+	v1 "github.com/mineracks/seedhammer-v1-companion/platform/v1"
 )
 
-const emulatorVersion = "v0.1-phase2-stub"
+const emulatorVersion = "v0.2-phase2-gui"
 
-// v1 hardware native LCD resolution.
 const (
 	lcdWidth  = 240
 	lcdHeight = 240
 )
 
-// browserPlatform implements v1.Platform against the JS host.
-//
-// Display() draws into an *image.RGBA buffer then ships it to JS via a
-// Uint8ClampedArray that the JS shell paints onto a <canvas>. Events()
-// returns a channel fed by exportPushEvent calls from JS.
+// browserPlatform implements gui.Platform against the JS host.
 type browserPlatform struct {
 	frame  *image.RGBA
 	events chan v1.Event
+
+	mu        sync.Mutex
+	pending   []gui.Event
+	dirtyRect image.Rectangle
+	chunkSent bool
 }
 
 func newBrowserPlatform() *browserPlatform {
 	return &browserPlatform{
 		frame:  image.NewRGBA(image.Rect(0, 0, lcdWidth, lcdHeight)),
-		events: make(chan v1.Event, 32),
+		events: make(chan v1.Event, 64),
 	}
 }
 
-func (p *browserPlatform) Events() <-chan v1.Event { return p.events }
+// ─── gui.Platform impl ────────────────────────────────────────────────────
 
-func (p *browserPlatform) Display(frame image.Image) {
-	draw.Draw(p.frame, p.frame.Bounds(), frame, frame.Bounds().Min, draw.Src)
-	// Convert RGBA buffer → JS Uint8ClampedArray and call back into JS.
+func (p *browserPlatform) Events(deadline time.Time) []gui.Event {
+	// Drain the v1.Event channel into gui.ButtonEvents. If no events
+	// pending, block (briefly) waiting for one or until deadline.
+	wait := time.Until(deadline)
+	if wait < 0 {
+		wait = 0
+	}
+	out := p.drainPending()
+	if len(out) > 0 {
+		return out
+	}
+	if wait == 0 {
+		return nil
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case ev := <-p.events:
+		out = append(out, p.toGuiEvent(ev))
+	case <-timer.C:
+	}
+	// Drain any extras that piled up while we were waiting.
+	for {
+		select {
+		case ev := <-p.events:
+			out = append(out, p.toGuiEvent(ev))
+		default:
+			return out
+		}
+	}
+}
+
+func (p *browserPlatform) drainPending() []gui.Event {
+	p.mu.Lock()
+	out := p.pending
+	p.pending = nil
+	p.mu.Unlock()
+	return out
+}
+
+func (p *browserPlatform) toGuiEvent(ev v1.Event) gui.Event {
+	return gui.ButtonEvent{
+		Button:  gui.Button(ev.Button), // enum order matches by construction
+		Pressed: ev.Pressed,
+	}.Event()
+}
+
+// push is called from the JS bridge — feeds the buffered channel.
+func (p *browserPlatform) push(button v1.Button, pressed bool) {
+	select {
+	case p.events <- v1.Event{Button: button, Pressed: pressed}:
+	default:
+	}
+}
+
+func (p *browserPlatform) Wakeup() {
+	// no-op — JS-driven runtime; nothing to wake from.
+}
+
+func (p *browserPlatform) PlateSizes() []backup.PlateSize {
+	// Mirror what's defined in backup.PlateSize. v1.3.0 ships
+	// SquarePlate and LargePlate.
+	return []backup.PlateSize{backup.SquarePlate, backup.LargePlate}
+}
+
+func (p *browserPlatform) Engraver() (gui.Engraver, error) {
+	// The browser can't engrave anything. Return an Engraver that
+	// politely says "no" if the GUI ever tries to drive it.
+	return nullEngraver{}, nil
+}
+
+func (p *browserPlatform) EngraverParams() engrave.Params {
+	// Values copied from upstream driver/mjolnir.Params at v1.3.0.
+	// We can't import the mjolnir package here because it transitively
+	// pulls in tarm/serial, which doesn't compile to GOOS=js (uses
+	// OS-specific syscalls). The layout math doesn't need the serial
+	// driver — just these two constants.
+	return engrave.Params{
+		StrokeWidth: 38,
+		Millimeter:  126,
+	}
+}
+
+func (p *browserPlatform) CameraFrame(size image.Point) {
+	// Stub: no camera in the browser yet. Emit an error FrameEvent so
+	// the gui's QR-scan screen stays in its "no camera" state instead
+	// of waiting forever.
+	p.mu.Lock()
+	p.pending = append(p.pending, gui.FrameEvent{Error: errCameraStubbed}.Event())
+	p.mu.Unlock()
+}
+
+func (p *browserPlatform) Now() time.Time { return time.Now() }
+
+func (p *browserPlatform) DisplaySize() image.Point {
+	return image.Pt(lcdWidth, lcdHeight)
+}
+
+func (p *browserPlatform) Dirty(r image.Rectangle) error {
+	p.mu.Lock()
+	p.dirtyRect = r.Intersect(p.frame.Bounds())
+	p.chunkSent = false
+	p.mu.Unlock()
+	return nil
+}
+
+func (p *browserPlatform) NextChunk() (draw.RGBA64Image, bool) {
+	p.mu.Lock()
+	if p.chunkSent || p.dirtyRect.Empty() {
+		p.mu.Unlock()
+		// One-chunk model: we ship the whole frame to JS in a single
+		// JS callback when the gui completes a Dirty/NextChunk cycle.
+		p.flushFrame()
+		return nil, false
+	}
+	p.chunkSent = true
+	r := p.dirtyRect
+	p.mu.Unlock()
+	// gui writes into the returned RGBA64Image — sub-image of our frame
+	// for the dirty rect. Our buffer is RGBA which satisfies
+	// draw.RGBA64Image via the standard image package.
+	return p.frame.SubImage(r).(*image.RGBA), true
+}
+
+// flushFrame ships the current frame buffer to JS. Called after each
+// Dirty/NextChunk render cycle.
+func (p *browserPlatform) flushFrame() {
 	jsBuf := js.Global().Get("Uint8ClampedArray").New(len(p.frame.Pix))
 	js.CopyBytesToJS(jsBuf, p.frame.Pix)
 	js.Global().Call("emulatorPaint", jsBuf, lcdWidth, lcdHeight)
 }
 
-// Push an event from JS into the events channel.
-func (p *browserPlatform) push(button v1.Button, pressed bool) {
-	select {
-	case p.events <- v1.Event{Button: button, Pressed: pressed}:
-	default:
-		// Drop on full — shouldn't happen with the modest buffer the
-		// firmware needs, but better than blocking the JS thread.
-	}
+func (p *browserPlatform) ScanQR(qr *image.Gray) ([][]byte, error) {
+	// Stub: no decodes. Real implementation lands when SeedSigner sim
+	// handoff wires up — the mock camera reads a sibling pane's canvas.
+	return nil, nil
 }
+
+func (p *browserPlatform) Debug() bool { return false }
+
+var errCameraStubbed = errors.New("camera not implemented in browser stub")
+
+// ─── nullEngraver ─────────────────────────────────────────────────────────
+
+type nullEngraver struct{}
+
+func (nullEngraver) Engrave(_ backup.PlateSize, _ engrave.Plan, _ <-chan struct{}) error {
+	return errors.New("engraver not connected (browser emulator)")
+}
+func (nullEngraver) Close() {}
+
+// ─── JS bridge ────────────────────────────────────────────────────────────
 
 var plat *browserPlatform
 
 func main() {
 	plat = newBrowserPlatform()
 
+	// Initial paint so the canvas isn't blank during gui bring-up.
+	clearBlack(plat.frame)
+	plat.flushFrame()
+
 	js.Global().Set("emulatorVersion", js.FuncOf(exportVersion))
 	js.Global().Set("emulatorPushEvent", js.FuncOf(exportPushEvent))
-	js.Global().Set("emulatorBootScreen", js.FuncOf(exportBootScreen))
 	js.Global().Set("emulatorLCDSize", js.ValueOf(map[string]any{
-		"w": lcdWidth,
-		"h": lcdHeight,
+		"w": lcdWidth, "h": lcdHeight,
 	}))
 
-	// Show the placeholder boot screen so the canvas isn't blank on load.
-	drawBootScreen(plat.frame)
-	plat.Display(plat.frame)
+	app, err := gui.NewApp(plat, emulatorVersion)
+	if err != nil {
+		js.Global().Get("console").Call("error", "gui.NewApp failed: "+err.Error())
+		select {}
+	}
 
-	// Future: wire plat to gui.Loop or whatever the lifted GUI exposes.
-	// For now, just consume events so the channel doesn't fill up.
+	// Drive frames in a goroutine. Each Frame call processes events
+	// and may render a new frame via Dirty + NextChunk.
 	go func() {
-		for ev := range plat.events {
-			// Echo to console for debugging; the real GUI will replace this.
-			js.Global().Get("console").Call("log",
-				fmt.Sprintf("emu: %s %s",
-					buttonName(ev.Button),
-					boolStr(ev.Pressed, "press", "release"),
-				),
-			)
+		for {
+			app.Frame()
 		}
 	}()
 
-	select {} // keep the runtime alive
+	select {}
 }
 
 func exportVersion(this js.Value, args []js.Value) any {
 	return emulatorVersion
 }
 
-// exportPushEvent: emulatorPushEvent(buttonId:number, pressed:boolean)
 func exportPushEvent(this js.Value, args []js.Value) any {
 	if len(args) != 2 {
 		return nil
@@ -125,66 +259,6 @@ func exportPushEvent(this js.Value, args []js.Value) any {
 	return nil
 }
 
-// exportBootScreen redraws the boot placeholder, useful for re-testing
-// after manual mucking.
-func exportBootScreen(this js.Value, args []js.Value) any {
-	drawBootScreen(plat.frame)
-	plat.Display(plat.frame)
-	return nil
-}
-
-// drawBootScreen fills the frame with a minimal welcome image so users see
-// SOMETHING the moment the WASM finishes loading. Future: this is replaced
-// by gui.Loop()'s first frame.
-func drawBootScreen(dst *image.RGBA) {
-	// Background.
-	draw.Draw(dst, dst.Bounds(), &image.Uniform{color.RGBA{0x12, 0x12, 0x12, 0xff}}, image.Point{}, draw.Src)
-
-	// Frame border to make the LCD area unambiguous.
-	border := color.RGBA{0xff, 0x88, 0x00, 0xff} // accent orange
-	for x := 0; x < lcdWidth; x++ {
-		dst.SetRGBA(x, 0, border)
-		dst.SetRGBA(x, lcdHeight-1, border)
-	}
-	for y := 0; y < lcdHeight; y++ {
-		dst.SetRGBA(0, y, border)
-		dst.SetRGBA(lcdWidth-1, y, border)
-	}
-
-	// Eight tick marks around the perimeter to show the button positions.
-	// Just a visual cue that this is real hardware-resolution rendering.
-	tick := color.RGBA{0xaa, 0xaa, 0xaa, 0xff}
-	for i := 0; i < 16; i++ {
-		dst.SetRGBA(lcdWidth/2-1+i-8, lcdHeight/2, tick)
-		dst.SetRGBA(lcdWidth/2, lcdHeight/2-1+i-8, tick)
-	}
-}
-
-func buttonName(b v1.Button) string {
-	switch b {
-	case v1.ButtonUp:
-		return "Up"
-	case v1.ButtonDown:
-		return "Down"
-	case v1.ButtonLeft:
-		return "Left"
-	case v1.ButtonRight:
-		return "Right"
-	case v1.ButtonCenter:
-		return "Center"
-	case v1.Button1:
-		return "Button1"
-	case v1.Button2:
-		return "Button2"
-	case v1.Button3:
-		return "Button3"
-	}
-	return "btn-" + strconv.Itoa(int(b))
-}
-
-func boolStr(b bool, t, f string) string {
-	if b {
-		return t
-	}
-	return f
+func clearBlack(dst *image.RGBA) {
+	draw.Draw(dst, dst.Bounds(), &image.Uniform{color.RGBA{0, 0, 0, 0xff}}, image.Point{}, draw.Src)
 }
