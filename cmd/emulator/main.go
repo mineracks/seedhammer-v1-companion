@@ -41,6 +41,11 @@ const (
 type browserPlatform struct {
 	frame  *image.RGBA
 	events chan v1.Event
+	// wake is a 1-buffered channel that the select in Events() reads
+	// from. exportSetSDCard, exportCameraFrame (future), and any other
+	// non-button event source pokes wake after appending to pending so
+	// the Events() wait returns immediately and drains the new event.
+	wake chan struct{}
 
 	mu        sync.Mutex
 	pending   []gui.Event
@@ -52,6 +57,14 @@ func newBrowserPlatform() *browserPlatform {
 	return &browserPlatform{
 		frame:  image.NewRGBA(image.Rect(0, 0, lcdWidth, lcdHeight)),
 		events: make(chan v1.Event, 64),
+		wake:   make(chan struct{}, 1),
+	}
+}
+
+func (p *browserPlatform) signalWake() {
+	select {
+	case p.wake <- struct{}{}:
+	default:
 	}
 }
 
@@ -76,14 +89,20 @@ func (p *browserPlatform) Events(deadline time.Time) []gui.Event {
 	select {
 	case ev := <-p.events:
 		out = append(out, p.toGuiEvent(ev))
+	case <-p.wake:
+		// Non-button event arrived (e.g. SDCardEvent). Fall through to
+		// the pending drain at the bottom.
 	case <-timer.C:
 	}
-	// Drain any extras that piled up while we were waiting.
+	// Drain any extras (button events) that piled up while we waited.
 	for {
 		select {
 		case ev := <-p.events:
 			out = append(out, p.toGuiEvent(ev))
 		default:
+			// Also re-drain pending — if signalWake fired, the SDCard
+			// or other event is sitting there now.
+			out = append(out, p.drainPending()...)
 			return out
 		}
 	}
@@ -113,7 +132,7 @@ func (p *browserPlatform) push(button v1.Button, pressed bool) {
 }
 
 func (p *browserPlatform) Wakeup() {
-	// no-op — JS-driven runtime; nothing to wake from.
+	p.signalWake()
 }
 
 func (p *browserPlatform) PlateSizes() []backup.PlateSize {
@@ -274,6 +293,7 @@ func exportSetSDCard(this js.Value, args []js.Value) any {
 	plat.mu.Lock()
 	plat.pending = append(plat.pending, gui.SDCardEvent{Inserted: inserted}.Event())
 	plat.mu.Unlock()
+	plat.signalWake() // unblock any in-flight Events() wait
 	return nil
 }
 
