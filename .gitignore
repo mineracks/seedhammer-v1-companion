@@ -1,0 +1,41 @@
+# Go build artifacts
+/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# WASM build artifacts
+*.wasm
+*.wasm.map
+wasm_exec.js
+
+# Node / web build
+node_modules/
+.pnpm-store/
+dist/
+.parcel-cache/
+
+# Pyodide bundle (large; downloaded at build time)
+web/seedsigner-sim/pyodide/dist/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# Test artifacts
+coverage.out
+coverage.html
+*.test
+seedsigner-screenshots/
+
+# Local dev
+.env
+.env.local
+
+# go workspace overrides
+go.work
+go.work.sum
