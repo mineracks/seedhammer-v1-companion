@@ -240,7 +240,31 @@ async function onSVGFile(ev) {
       .map((p) => p.getAttribute("d"))
       .filter(Boolean);
     if (ds.length === 0) {
-      throw new Error("file contains no drawable shapes (no paths, rects, circles, lines, polygons)");
+      // Diagnostic: what IS in the file? Surface element counts so the
+      // user knows what to convert. Common offenders: <text> logos
+      // (need to be converted to outlines first via Path → Object to
+      // Path in Inkscape), <image> rasters (need to be re-vectorised),
+      // <use>/<symbol> instances (need to be resolved).
+      const counts = {};
+      for (const el of root.querySelectorAll("*")) {
+        const tag = el.tagName.toLowerCase();
+        counts[tag] = (counts[tag] || 0) + 1;
+      }
+      const summary = Object.entries(counts)
+        .filter(([t]) => t !== "svg")
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([t, n]) => `${n} <${t}>`)
+        .join(", ") || "(empty)";
+      let hint = "";
+      if (counts.text || counts.tspan) {
+        hint = " — text logos need 'Path → Object to Path' in Inkscape first";
+      } else if (counts.image) {
+        hint = " — raster images can't be engraved; re-trace the logo as vector outlines";
+      } else if (counts.use || counts.symbol) {
+        hint = " — unresolved <use>/<symbol> references; expand in your editor first";
+      }
+      throw new Error(`file has no drawable shapes${hint}\nfound: ${summary}`);
     }
     svgPaths = ds;
     els.svgSummary.textContent = `${f.name} — ${ds.length} path${ds.length === 1 ? "" : "s"}, ${ds.reduce((n, d) => n + d.length, 0)} chars total`;

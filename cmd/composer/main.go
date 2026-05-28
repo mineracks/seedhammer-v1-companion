@@ -328,21 +328,23 @@ func exportQRSVG(this js.Value, args []js.Value) any {
 	})
 }
 
-// holeInsetMM is how far the centre of each M3 mounting hole sits from
-// the nearest plate edge. Sits roughly mid-way between outerMargin (3mm)
-// and innerMargin (10mm) — the holes are physically drilled in that band
-// on real SeedHammer SH-01/02/03 plates so engraving must avoid it.
-const holeInsetMM = 6.5
+// holeInsetMM is the distance from each plate edge to the centre of each
+// M3 mounting hole. Verified against the Mineracks SH-02 production DXF
+// (Name-Plate-85x85-316L 2B.DXF): 4 circles at (3,3), (3,82), (82,3),
+// (82,82), radius 1.5mm. The centres sit exactly on the outerMargin
+// line. Same value used for SH-01 and SH-03 — same physical drill jig.
+const holeInsetMM = 3.0
 
-// holeDiameterMM is the visual diameter of each mounting hole. The actual
-// M3 clearance hole is 3.2mm but 3.5mm gives the preview better contrast
-// against the plate fill.
-const holeDiameterMM = 3.5
+// holeDiameterMM matches the M3 clearance hole in the CAD: 3.0mm
+// diameter (radius 1.5mm). The hole renders identically to the
+// production part — no visual fudging.
+const holeDiameterMM = 3.0
 
-// holeDangerDiameterMM is the radius of the dashed "no-engrave" exclusion
-// ring drawn around each hole. Mirrors the practical margin a user should
-// leave so the engrave head doesn't catch on the screw head or punch
-// directly onto stainless that's resting on a nut.
+// holeDangerDiameterMM is the diameter of the dashed "no-engrave"
+// exclusion ring drawn around each hole. Picked so the ring's outer
+// edge sits at ~6mm from plate edge — gives the user a clear "don't
+// engrave inside the M3 nut footprint" margin (M3 nut across-flats is
+// 5.5mm, head/socket 5-6mm).
 const holeDangerDiameterMM = 7.0
 
 // holePositions returns the mounting-hole centres for a given plate.
@@ -392,12 +394,15 @@ func writePlateChrome(sb *strings.Builder, dims plateDims) {
 	// rendered with a contrasting fill so it reads as "metal removed
 	// here, leave clear" at a glance.
 	for _, h := range holePositions(dims) {
+		// no-engrave exclusion ring (dashed red)
 		fmt.Fprintf(sb,
 			`<circle cx="%g" cy="%g" r="%g" fill="none" stroke="#c92a2a" stroke-width="0.15" stroke-dasharray="0.5,0.5" opacity="0.7"/>`,
 			h[0], h[1], holeDangerDiameterMM/2,
 		)
+		// the actual hole — fill matches the page bg so the eye reads
+		// "metal removed here" rather than a printed dot
 		fmt.Fprintf(sb,
-			`<circle cx="%g" cy="%g" r="%g" fill="#777" stroke="#222" stroke-width="0.2"/>`,
+			`<circle cx="%g" cy="%g" r="%g" fill="#fff" stroke="#444" stroke-width="0.25"/>`,
 			h[0], h[1], holeDiameterMM/2,
 		)
 	}
