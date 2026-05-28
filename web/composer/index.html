@@ -29,6 +29,21 @@
     <div role="radiogroup" aria-label="Plate type" id="plate-types"></div>
   </section>
 
+  <section class="card glass preview-card" aria-label="Plate preview">
+    <div class="preview-wrap">
+      <div id="preview" class="preview" aria-label="Plate preview"></div>
+      <div class="preview-meta">
+        <span id="size-meter">— B</span>
+        <span id="size-cap">/ 65535 B</span>
+      </div>
+    </div>
+    <p class="preview-note">
+      Visual preview only — text shown in your system monospace, not the
+      Comfortaa glyphs the engraver will actually punch. Pixel-faithful
+      preview lands in a follow-up commit.
+    </p>
+  </section>
+
   <section class="card glass editor-card" aria-label="Block text editor">
     <div class="editor-head">
       <h2>Block text</h2>
@@ -37,25 +52,16 @@
     <ol id="lines" class="lines"></ol>
   </section>
 
-  <section class="card glass preview-card" aria-label="SH1E output">
-    <div class="preview-wrap">
-      <div class="preview-meta">
-        <span id="size-meter">0 B</span>
-        <span id="size-cap">/ 65535 B</span>
-      </div>
-      <pre id="output" class="error" hidden></pre>
-    </div>
-  </section>
-
-  <section class="card glass actions-card" aria-label="Actions">
-    <button id="btn-generate" class="btn primary" disabled>
-      <span class="btn-label">Generate SH1E</span>
-      <span class="btn-sub">test build — bytes shown above</span>
+  <section class="card glass actions-card" aria-label="Output">
+    <button id="btn-bytes" class="btn" disabled>
+      <span class="btn-label">Show SH1E bytes</span>
+      <span class="btn-sub">debug — hex dump below</span>
     </button>
+    <pre id="output" class="error" hidden></pre>
   </section>
 
   <footer class="card glass footer-card">
-    <p>This is an early Phase&nbsp;1 build. Today it proves the Go-to-WASM pipeline works and the SH1E encoder produces canonical bytes. Live preview, QR display, and the SeedSigner sim land in following commits. See <a href="https://github.com/mineracks/seedhammer-v1-companion">the repo</a> for the roadmap.</p>
+    <p>This is an early Phase&nbsp;1 build. SH1E encoder + live layout preview both wired in. Next: pixel-faithful Comfortaa rasterisation, QR display, SVG path mode, the SeedSigner sim. See <a href="https://github.com/mineracks/seedhammer-v1-companion">the repo</a>.</p>
   </footer>
 </main>
 

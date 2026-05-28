@@ -302,3 +302,68 @@ main {
 }
 .footer-card p { margin: 0; }
 .footer-card code { font-size: 11px; }
+
+/* v1-specific additions */
+
+/* Override the lifted webnfc .preview rules: that container was sized
+   for SH-II's square 85x85 plate (aspect-ratio: 1/1). v1 has three
+   plate sizes — Small 85x55 (wider), Square 85x85, Large 85x134
+   (taller). Let the SVG dictate its own aspect ratio and centre it. */
+.preview {
+  aspect-ratio: unset;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+  /* Cap visual size so a Large plate doesn't push the rest of the page. */
+  max-height: 70vh;
+}
+.preview svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 70vh;
+  margin: 0 auto;
+}
+.preview:empty::before { content: ""; }
+
+.preview-note {
+  margin: 8px 0 0;
+  font-size: 0.8em;
+  color: var(--text-dim);
+  text-align: center;
+}
+.plate-choice { display: inline-flex; gap: 6px; align-items: center; margin-right: 16px; cursor: pointer; }
+.plate-choice small { color: var(--text-dim); margin-left: 4px; }
+.status.error { color: var(--error); }
+
+/* Stop wide content (the hex dump) from inflating the grid column. Grid
+   items have `min-width: auto` by default which means content intrinsic
+   width sets the column min — `min-width: 0` opts back into shrinking. */
+html, body { overflow-x: hidden; }
+main > * { min-width: 0; }
+
+/* hex-dump pre: scroll internally inside its now-constrained parent. */
+#output {
+  white-space: pre;
+  overflow-x: auto;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--surface-strong);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 8px 0 0;
+  color: var(--text);
+  max-height: 50vh;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+#output.error {
+  color: var(--error);
+  white-space: pre-wrap;
+  font-family: inherit;
+}
