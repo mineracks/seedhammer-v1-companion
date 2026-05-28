@@ -347,10 +347,17 @@ const holeDiameterMM = 3.0
 // 5.5mm, head/socket 5-6mm).
 const holeDangerDiameterMM = 7.0
 
+// sh03MidHoleY is the Y coordinate of the two extra clamping holes on
+// the long sides of the SH-03 (Large) plate, measured from the top edge.
+// User-confirmed at ~45 mm — upper-third position, not the geometric
+// centerline. Matches the physical clamping pattern on real Mineracks
+// SH-03 production plates (see engraved sample in roadmap photos).
+const sh03MidHoleY = 45.0
+
 // holePositions returns the mounting-hole centres for a given plate.
 // SH-01 (Small) and SH-02 (Square) have 4 corner holes; SH-03 (Large)
-// adds 2 mid-edge holes on the long sides for extra clamping force
-// (the 134mm length needs more than 4-corner support).
+// adds 2 mid-edge holes on the long sides at sh03MidHoleY for extra
+// clamping force (the 134mm length needs more than 4-corner support).
 func holePositions(dims plateDims) [][2]float64 {
 	w, h := dims.W, dims.H
 	corners := [][2]float64{
@@ -364,8 +371,8 @@ func holePositions(dims plateDims) [][2]float64 {
 	// falls below the threshold.
 	if h >= 120 {
 		corners = append(corners,
-			[2]float64{holeInsetMM, h / 2},
-			[2]float64{w - holeInsetMM, h / 2},
+			[2]float64{holeInsetMM, sh03MidHoleY},
+			[2]float64{w - holeInsetMM, sh03MidHoleY},
 		)
 	}
 	return corners
