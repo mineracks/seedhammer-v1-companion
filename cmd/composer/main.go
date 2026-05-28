@@ -17,6 +17,10 @@ import (
 	"syscall/js"
 
 	"github.com/kortschak/qr"
+	"golang.org/x/image/math/fixed"
+
+	"github.com/mineracks/seedhammer-v1-companion/font/bitmap"
+	"github.com/mineracks/seedhammer-v1-companion/font/comfortaa"
 	"github.com/mineracks/seedhammer-v1-companion/engrave/wire/sh1e"
 )
 
@@ -215,32 +219,131 @@ func exportPreviewText(this js.Value, args []js.Value) any {
 		innerMarginMM, innerMarginMM, dims.W-2*innerMarginMM, dims.H-2*innerMarginMM,
 	)
 
-	// Text blocks
+	// Text blocks — render each as glyph-faithful bitmap from
+	// font/comfortaa. Each bitmap pixel becomes a small SVG rect inside
+	// a scale+translate group, so the preview matches what the firmware's
+	// LCD would show when rendering the same plate locally.
 	for _, l := range layoutLines(lines) {
-		// font-size in SVG units = mm (because of viewBox). Roughly:
-		// 12 pt ≈ 4.23 mm; we use 0.33 mm/pt as the multiplier.
-		fontMM := float64(l.Size) * 0.33
-		anchor := "start"
-		switch l.Alignment {
-		case sh1e.AlignCenter:
-			anchor = "middle"
-		case sh1e.AlignRight:
-			anchor = "end"
-		}
-		// We treat (XMM, YMM) as the TOP-LEFT corner of the glyph cell
-		// (matching the spec). SVG <text> y is the baseline. Offset by
-		// the cap height (~0.78 of font size for monospaced faces) so
-		// the rendered text starts at YMM. Avoids dominant-baseline,
-		// which Safari renders inconsistently for "hanging".
-		baselineY := float64(l.YMM) + fontMM*0.78
-		fmt.Fprintf(&sb,
-			`<text x="%d" y="%g" font-size="%g" text-anchor="%s" fill="#111" font-weight="600">%s</text>`,
-			l.XMM, baselineY, fontMM, anchor, escapeXML(l.Text),
-		)
+		renderTextRowBitmap(&sb, l)
 	}
 
 	sb.WriteString(`</svg>`)
 	return sb.String()
+}
+
+// faceForFont returns the bitmap face used to render a given SH1E font ID
+// at the given point size. v1.3.0 ships ~one face per font name (the
+// engraver and the LCD both consume the same bitmap data), so size is
+// approximate — we pick the closest available variant.
+//
+// Future: when we add multi-size faces or vector-form engrave preview,
+// this is where the lookup grows.
+func faceForFont(id sh1e.FontID, sizePt uint16) *bitmap.Face {
+	switch id {
+	case sh1e.FontComfortaa:
+		// Comfortaa Bold17 ≈ 17px tall; Regular16 ≈ 16px. For our
+		// 12pt design (~16px equivalent), Regular16 is the closest fit.
+		return comfortaa.Regular16
+	case sh1e.FontPoppins, sh1e.FontConstant:
+		// Both fall back to Comfortaa until we wire their faces in.
+		return comfortaa.Regular16
+	}
+	return comfortaa.Regular16
+}
+
+// renderTextRowBitmap writes an SVG <g> for a single line, using the
+// bitmap face's glyph data. Each "on" pixel in the bitmap becomes part
+// of a horizontal-run <rect>. The whole group is scaled to match the
+// requested fontMM size and translated to (l.XMM, l.YMM).
+//
+// (l.XMM, l.YMM) is treated as the TOP-LEFT of the glyph cell — the
+// translate target is the glyph top, with the baseline offset built
+// into the scaling.
+func renderTextRowBitmap(sb *strings.Builder, l lineLayout) {
+	face := faceForFont(l.FontID, l.Size)
+	if face == nil {
+		return
+	}
+	// SH1E layout treats Size in points. Convert to the corresponding
+	// physical height in mm: ~0.33 mm/pt is the rule of thumb we use
+	// elsewhere in the file.
+	fontMM := float64(l.Size) * 0.33
+
+	// The bitmap is rendered in pixel units. Pick a scale factor so the
+	// glyph's em-square (≈16 px tall for Regular16) maps to fontMM.
+	const facePx = 16.0
+	scale := fontMM / facePx
+
+	// Baseline sits a cap-height below the top-left anchor. Glyph
+	// bounds.Min.Y is negative for the ascender region; rendering at
+	// y = ascentPx places the glyph top exactly at originY=0 in the
+	// pre-translate coordinate space.
+	const ascentPx = 13 // Comfortaa Regular16 ascent
+
+	// Horizontal alignment shifts the entire group. Compute the line's
+	// pixel width by walking glyphs once.
+	cursorPx := fixed.Int26_6(0)
+	prevR := rune(0)
+	for _, r := range l.Text {
+		if prevR != 0 {
+			cursorPx += face.Kern(prevR, r)
+		}
+		_, advance, ok := face.Glyph(r)
+		if ok {
+			cursorPx += advance
+		}
+		prevR = r
+	}
+	totalPx := float64(cursorPx) / 64.0
+
+	originX := float64(l.XMM)
+	switch l.Alignment {
+	case sh1e.AlignCenter:
+		originX -= totalPx * scale * 0.5
+	case sh1e.AlignRight:
+		originX -= totalPx * scale
+	}
+
+	fmt.Fprintf(sb,
+		`<g transform="translate(%g %g) scale(%g)" fill="#111">`,
+		originX, float64(l.YMM)+float64(ascentPx)*scale, scale,
+	)
+
+	// Second pass: actually emit rects.
+	cursorPx = 0
+	prevR = 0
+	for _, r := range l.Text {
+		if prevR != 0 {
+			cursorPx += face.Kern(prevR, r)
+		}
+		img, advance, ok := face.Glyph(r)
+		if !ok {
+			prevR = r
+			continue
+		}
+		cursorPxInt := int(cursorPx >> 6)
+		b := img.Bounds()
+		for y := b.Min.Y; y < b.Max.Y; y++ {
+			x := b.Min.X
+			for x < b.Max.X {
+				if img.AlphaAt(x, y).A < 0x80 {
+					x++
+					continue
+				}
+				runStart := x
+				for x < b.Max.X && img.AlphaAt(x, y).A >= 0x80 {
+					x++
+				}
+				fmt.Fprintf(sb,
+					`<rect x="%d" y="%d" width="%d" height="1"/>`,
+					cursorPxInt+runStart, y, x-runStart,
+				)
+			}
+		}
+		cursorPx += advance
+		prevR = r
+	}
+	sb.WriteString(`</g>`)
 }
 
 // exportQR: composerQR(plateType:number, lines:string[]) -> {svg:string, modules:number, bytes:number}
