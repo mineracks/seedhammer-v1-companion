@@ -349,10 +349,16 @@ const holeDangerDiameterMM = 7.0
 
 // sh03MidHoleY is the Y coordinate of the two extra clamping holes on
 // the long sides of the SH-03 (Large) plate, measured from the top edge.
-// User-confirmed at ~45 mm — upper-third position, not the geometric
-// centerline. Matches the physical clamping pattern on real Mineracks
-// SH-03 production plates (see engraved sample in roadmap photos).
-const sh03MidHoleY = 45.0
+//
+// Manufacturer-confirmed at Y=52: the SH-03 is geometrically "SH-01 on
+// top of SH-02". SH-01 is 85×55 with holes at y=3 and y=52 (3mm inset
+// from each edge); SH-02 is 85×85 with holes at y=3 and y=82. Stacking
+// them with the SH-01 bottom row aligned to the SH-02 top row puts:
+//   - SH-03 top holes at y=3       (SH-01 top edge inset)
+//   - SH-03 mid holes at y=52      (SH-01 bottom = SH-02 top, shared)
+//   - SH-03 bot holes at y=131     (SH-02 bottom edge inset = 134-3)
+// Total plate height: 52 + 82 = 134 mm ✓
+const sh03MidHoleY = 52.0
 
 // holePositions returns the mounting-hole centres for a given plate.
 // SH-01 (Small) and SH-02 (Square) have 4 corner holes; SH-03 (Large)
