@@ -14,7 +14,8 @@
 const els = {
   status: document.getElementById("status"),
   lcd: document.getElementById("lcd"),
-  buttons: document.querySelectorAll(".emu-btn"),
+  // Disc joystick zones + side keys. Both selectors carry data-btn.
+  buttons: document.querySelectorAll(".emu-disc-zone, .emu-key"),
 };
 
 const ctx = els.lcd.getContext("2d", { alpha: false });
@@ -87,14 +88,17 @@ for (const b of els.buttons) {
 // press events on autorepeat.
 const heldKeys = new Set();
 
+function domFor(id) {
+  return document.querySelector(`[data-btn="${id}"]`);
+}
+
 document.addEventListener("keydown", (e) => {
   const id = KEYMAP[e.key];
   if (id === undefined) return;
   if (heldKeys.has(e.key)) return; // autorepeat
   heldKeys.add(e.key);
   e.preventDefault();
-  // Visual feedback on the on-screen button too.
-  const dom = document.querySelector(`.emu-btn[data-btn="${id}"]`);
+  const dom = domFor(id);
   if (dom) dom.classList.add("pressed");
   pushEvent(id, true);
 });
@@ -104,7 +108,7 @@ document.addEventListener("keyup", (e) => {
   if (id === undefined) return;
   heldKeys.delete(e.key);
   e.preventDefault();
-  const dom = document.querySelector(`.emu-btn[data-btn="${id}"]`);
+  const dom = domFor(id);
   if (dom) dom.classList.remove("pressed");
   pushEvent(id, false);
 });
