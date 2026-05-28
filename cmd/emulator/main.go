@@ -221,6 +221,7 @@ func main() {
 
 	js.Global().Set("emulatorVersion", js.FuncOf(exportVersion))
 	js.Global().Set("emulatorPushEvent", js.FuncOf(exportPushEvent))
+	js.Global().Set("emulatorSetSDCard", js.FuncOf(exportSetSDCard))
 	js.Global().Set("emulatorLCDSize", js.ValueOf(map[string]any{
 		"w": lcdWidth, "h": lcdHeight,
 	}))
@@ -256,6 +257,23 @@ func exportPushEvent(this js.Value, args []js.Value) any {
 		return nil
 	}
 	plat.push(v1.Button(id), pressed)
+	return nil
+}
+
+// exportSetSDCard: emulatorSetSDCard(inserted:boolean)
+//
+// Synthesizes a gui.SDCardEvent so the firmware sees the same insert /
+// remove notification it would get from the kernel's hotplug events on
+// real hardware. Lets users trigger the "REMOVE SD CARD" screen from
+// the browser without dealing with the actual kernel events.
+func exportSetSDCard(this js.Value, args []js.Value) any {
+	if len(args) != 1 {
+		return nil
+	}
+	inserted := args[0].Bool()
+	plat.mu.Lock()
+	plat.pending = append(plat.pending, gui.SDCardEvent{Inserted: inserted}.Event())
+	plat.mu.Unlock()
 	return nil
 }
 

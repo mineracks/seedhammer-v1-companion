@@ -16,6 +16,9 @@ const els = {
   lcd: document.getElementById("lcd"),
   // Disc joystick zones + side keys. Both selectors carry data-btn.
   buttons: document.querySelectorAll(".emu-disc-zone, .emu-key"),
+  sdToggle: document.getElementById("sdcard-toggle"),
+  sdState:  document.getElementById("sdcard-state"),
+  sdCard:   document.getElementById("sdcard-card"),
 };
 
 const ctx = els.lcd.getContext("2d", { alpha: false });
@@ -112,6 +115,23 @@ document.addEventListener("keyup", (e) => {
   if (dom) dom.classList.remove("pressed");
   pushEvent(id, false);
 });
+
+// SD card simulation. Real device boots with the card inserted; this
+// state mirrors that so the initial value matches the firmware's
+// expectations. Toggling fires gui.SDCardEvent on the Go side.
+let sdInserted = true;
+
+function setSDCard(inserted) {
+  if (!wasmReady) return;
+  sdInserted = inserted;
+  els.sdCard.classList.toggle("inserted", inserted);
+  els.sdCard.classList.toggle("ejected", !inserted);
+  els.sdToggle.textContent = inserted ? "Eject SD card" : "Insert SD card";
+  els.sdState.textContent  = inserted ? "inserted" : "ejected";
+  globalThis.emulatorSetSDCard(inserted);
+}
+
+els.sdToggle.addEventListener("click", () => setSDCard(!sdInserted));
 
 async function loadWasm() {
   setStatus("Loading WASM…");

@@ -52,6 +52,21 @@
         <button class="emu-key" data-btn="7" aria-label="Button 3 (confirm)">3</button>
       </div>
     </div>
+
+    <!-- SD card slot indicator. Not on the physical device's front, but
+         exposed here so users can trigger the firmware's insert / remove
+         flow without dealing with kernel hotplug events. -->
+    <div class="emu-sdcard">
+      <div class="emu-sdcard-slot">
+        <div id="sdcard-card" class="emu-sdcard-card inserted" aria-hidden="true">
+          <span>SD</span>
+        </div>
+      </div>
+      <div class="emu-sdcard-controls">
+        <button id="sdcard-toggle" class="btn small" type="button">Eject SD card</button>
+        <small id="sdcard-state">inserted</small>
+      </div>
+    </div>
   </section>
 
   <section class="card glass" aria-label="Keyboard mapping">
