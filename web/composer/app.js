@@ -94,6 +94,12 @@ function scheduleRefresh() {
   // Debounce keystrokes; 80ms feels live but doesn't thrash the WASM.
   if (refreshTimer) clearTimeout(refreshTimer);
   refreshTimer = setTimeout(refresh, 80);
+  // Clear any stale Show-SH1E-bytes error as soon as the user types again.
+  if (!els.output.hidden && els.output.classList.contains("error")) {
+    els.output.hidden = true;
+    els.output.classList.remove("error");
+    els.output.textContent = "";
+  }
 }
 
 function refresh() {

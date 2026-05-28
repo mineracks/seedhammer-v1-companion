@@ -17,11 +17,10 @@ import (
 	"syscall/js"
 
 	"github.com/kortschak/qr"
-	"golang.org/x/image/math/fixed"
 
-	"github.com/mineracks/seedhammer-v1-companion/font/bitmap"
-	"github.com/mineracks/seedhammer-v1-companion/font/comfortaa"
 	"github.com/mineracks/seedhammer-v1-companion/engrave/wire/sh1e"
+	"github.com/mineracks/seedhammer-v1-companion/font/constant"
+	"github.com/mineracks/seedhammer-v1-companion/font/vector"
 )
 
 const composerVersion = "v0.1-phase1-milestone"
@@ -32,6 +31,9 @@ func main() {
 	js.Global().Set("composerEncodeText", js.FuncOf(exportEncodeText))
 	js.Global().Set("composerPreviewText", js.FuncOf(exportPreviewText))
 	js.Global().Set("composerQR", js.FuncOf(exportQR))
+	js.Global().Set("composerPreviewSVG", js.FuncOf(exportPreviewSVG))
+	js.Global().Set("composerEncodeSVG", js.FuncOf(exportEncodeSVG))
+	js.Global().Set("composerQRSVG", js.FuncOf(exportQRSVG))
 	// Block forever so the Go runtime keeps the exported funcs alive.
 	select {}
 }
@@ -195,153 +197,240 @@ func exportPreviewText(this js.Value, args []js.Value) any {
 	dims := plateDimsByID[plateType]
 
 	var sb strings.Builder
-	// Note: SVG y-axis grows downward (consistent with our XMM/YMM
-	// "from plate-origin top-left" convention).
+	// SVG y-axis grows downward — consistent with our XMM/YMM "from
+	// plate-origin top-left" convention.
 	fmt.Fprintf(&sb,
-		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %g %g" preserveAspectRatio="xMidYMid meet" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">`,
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %g %g" preserveAspectRatio="xMidYMid meet">`,
 		dims.W, dims.H,
 	)
+	writePlateChrome(&sb, dims)
 
-	// Plate outline (rounded-corner rect)
-	fmt.Fprintf(&sb,
-		`<rect x="0.5" y="0.5" width="%g" height="%g" rx="3" ry="3" fill="#ececec" stroke="#444" stroke-width="0.4"/>`,
-		dims.W-1, dims.H-1,
-	)
-
-	// outerMargin guide (dashed, light)
-	fmt.Fprintf(&sb,
-		`<rect x="%g" y="%g" width="%g" height="%g" fill="none" stroke="#999" stroke-width="0.15" stroke-dasharray="0.6,0.6"/>`,
-		outerMarginMM, outerMarginMM, dims.W-2*outerMarginMM, dims.H-2*outerMarginMM,
-	)
-	// innerMargin guide (dashed, slightly darker)
-	fmt.Fprintf(&sb,
-		`<rect x="%g" y="%g" width="%g" height="%g" fill="none" stroke="#666" stroke-width="0.15" stroke-dasharray="0.4,0.4"/>`,
-		innerMarginMM, innerMarginMM, dims.W-2*innerMarginMM, dims.H-2*innerMarginMM,
-	)
-
-	// Text blocks — render each as glyph-faithful bitmap from
-	// font/comfortaa. Each bitmap pixel becomes a small SVG rect inside
-	// a scale+translate group, so the preview matches what the firmware's
-	// LCD would show when rendering the same plate locally.
+	// Text blocks — render via the same vector engraving face the v1
+	// firmware streams to the MarkingWay head. Every <path> stroke in
+	// the preview is a stroke the engraver would actually punch.
 	for _, l := range layoutLines(lines) {
-		renderTextRowBitmap(&sb, l)
+		renderTextRow(&sb, l)
 	}
 
 	sb.WriteString(`</svg>`)
 	return sb.String()
 }
 
-// faceForFont returns the bitmap face used to render a given SH1E font ID
-// at the given point size. v1.3.0 ships ~one face per font name (the
-// engraver and the LCD both consume the same bitmap data), so size is
-// approximate — we pick the closest available variant.
+// ─── SVG-mode exports ────────────────────────────────────────────────────
 //
-// Future: when we add multi-size faces or vector-form engrave preview,
-// this is where the lookup grows.
-func faceForFont(id sh1e.FontID, sizePt uint16) *bitmap.Face {
-	switch id {
-	case sh1e.FontComfortaa:
-		// Comfortaa Bold17 ≈ 17px tall; Regular16 ≈ 16px. For our
-		// 12pt design (~16px equivalent), Regular16 is the closest fit.
-		return comfortaa.Regular16
-	case sh1e.FontPoppins, sh1e.FontConstant:
-		// Both fall back to Comfortaa until we wire their faces in.
-		return comfortaa.Regular16
+// In SVG mode the composer takes a list of SVG path d-strings (extracted
+// by the JS shell from an uploaded .svg file) and stamps them onto the
+// plate. Each d-string becomes one sh1e.SvgPath, scaled to fit the plate
+// body and anchored at the plate origin.
+
+// readSVGArgs extracts (plateType, []d-strings) from JS args.
+func readSVGArgs(args []js.Value) (sh1e.PlateType, []string, error) {
+	if len(args) != 2 {
+		return 0, nil, fmt.Errorf("expected (plateType, paths[]), got %d args", len(args))
 	}
-	return comfortaa.Regular16
+	plateType := sh1e.PlateType(args[0].Int())
+	jsPaths := args[1]
+	n := jsPaths.Length()
+	paths := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		s := jsPaths.Index(i).String()
+		if s == "" {
+			continue
+		}
+		paths = append(paths, s)
+	}
+	return plateType, paths, nil
 }
 
-// renderTextRowBitmap writes an SVG <g> for a single line, using the
-// bitmap face's glyph data. Each "on" pixel in the bitmap becomes part
-// of a horizontal-run <rect>. The whole group is scaled to match the
-// requested fontMM size and translated to (l.XMM, l.YMM).
+// makeSVGDesign builds an sh1e.Design with one SvgPath per d-string. For
+// Phase 1 we anchor every path at the plate body's top-left interior
+// corner (innerMargin, innerMargin) at 100% scale; richer positioning
+// arrives in a follow-up commit once the composer has on-plate drag UI.
+func makeSVGDesign(plateType sh1e.PlateType, paths []string) sh1e.Design {
+	svgPaths := make([]sh1e.SvgPath, 0, len(paths))
+	for _, d := range paths {
+		svgPaths = append(svgPaths, sh1e.SvgPath{
+			XMM:      innerMarginMM,
+			YMM:      innerMarginMM,
+			ScalePct: 100,
+			PathD:    d,
+		})
+	}
+	return sh1e.Design{
+		PlateType: plateType,
+		SvgPaths:  svgPaths,
+	}
+}
+
+// exportPreviewSVG: composerPreviewSVG(plateType, pathDStrings) -> string
 //
-// (l.XMM, l.YMM) is treated as the TOP-LEFT of the glyph cell — the
-// translate target is the glyph top, with the baseline offset built
-// into the scaling.
-func renderTextRowBitmap(sb *strings.Builder, l lineLayout) {
-	face := faceForFont(l.FontID, l.Size)
+// Renders the plate outline + the supplied SVG paths, rendered native via
+// the browser's own <path d="..."/> support. Each path is drawn at the
+// anchor (innerMargin, innerMargin) at 100% scale.
+func exportPreviewSVG(this js.Value, args []js.Value) any {
+	plateType, paths, err := readSVGArgs(args)
+	if err != nil {
+		return jsError(err)
+	}
+	if int(plateType) >= len(plateDimsByID) {
+		return jsError(fmt.Errorf("unknown plate type %d", plateType))
+	}
+	dims := plateDimsByID[plateType]
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb,
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %g %g" preserveAspectRatio="xMidYMid meet">`,
+		dims.W, dims.H,
+	)
+	writePlateChrome(&sb, dims)
+	for _, d := range paths {
+		// Each path is placed at (innerMargin, innerMargin) via a translate.
+		fmt.Fprintf(&sb,
+			`<g transform="translate(%g %g)" fill="none" stroke="#111" stroke-width="0.3" stroke-linecap="round" stroke-linejoin="round"><path d="%s"/></g>`,
+			float64(innerMarginMM), float64(innerMarginMM), escapeXML(d),
+		)
+	}
+	sb.WriteString(`</svg>`)
+	return sb.String()
+}
+
+// exportEncodeSVG: composerEncodeSVG(plateType, pathDStrings) -> Uint8Array
+func exportEncodeSVG(this js.Value, args []js.Value) any {
+	plateType, paths, err := readSVGArgs(args)
+	if err != nil {
+		return jsError(err)
+	}
+	bytes, err := sh1e.Encode(makeSVGDesign(plateType, paths))
+	if err != nil {
+		return jsError(err)
+	}
+	return uint8Array(bytes)
+}
+
+// exportQRSVG: composerQRSVG(plateType, pathDStrings) -> {svg, modules, bytes}
+func exportQRSVG(this js.Value, args []js.Value) any {
+	plateType, paths, err := readSVGArgs(args)
+	if err != nil {
+		return jsError(err)
+	}
+	payload, err := sh1e.Encode(makeSVGDesign(plateType, paths))
+	if err != nil {
+		return jsError(err)
+	}
+	code, err := qr.Encode(string(payload), qr.M)
+	if err != nil {
+		return jsError(fmt.Errorf("qr encode: %w", err))
+	}
+	return js.ValueOf(map[string]any{
+		"svg":     qrSVG(code),
+		"modules": code.Size,
+		"bytes":   len(payload),
+	})
+}
+
+// writePlateChrome emits the plate outline + margin guides into sb. Shared
+// between Text-mode and SVG-mode previews.
+func writePlateChrome(sb *strings.Builder, dims plateDims) {
+	fmt.Fprintf(sb,
+		`<rect x="0.5" y="0.5" width="%g" height="%g" rx="3" ry="3" fill="#ececec" stroke="#444" stroke-width="0.4"/>`,
+		dims.W-1, dims.H-1,
+	)
+	fmt.Fprintf(sb,
+		`<rect x="%g" y="%g" width="%g" height="%g" fill="none" stroke="#999" stroke-width="0.15" stroke-dasharray="0.6,0.6"/>`,
+		outerMarginMM, outerMarginMM, dims.W-2*outerMarginMM, dims.H-2*outerMarginMM,
+	)
+	fmt.Fprintf(sb,
+		`<rect x="%g" y="%g" width="%g" height="%g" fill="none" stroke="#666" stroke-width="0.15" stroke-dasharray="0.4,0.4"/>`,
+		innerMarginMM, innerMarginMM, dims.W-2*innerMarginMM, dims.H-2*innerMarginMM,
+	)
+}
+
+// faceForFont returns the vector engraving face used for a given SH1E
+// font ID. Every SH1E font currently maps to font/constant — that's the
+// only outline font the v1 firmware ships, and it's the one the engraver
+// actually punches strokes from. Bitmap faces (font/comfortaa,
+// font/poppins) are LCD-only and not used here.
+//
+// When upstream lands more vector faces, this map grows. The composer's
+// preview is therefore guaranteed to look like what the engraver
+// produces, because it's literally walking the same segment data the
+// engrave pipeline does.
+func faceForFont(id sh1e.FontID) *vector.Face {
+	// Single face for now. Future: switch on id.
+	_ = id
+	return constant.Font
+}
+
+// renderTextRow emits an SVG <g> containing the stroked outline of a
+// single text line. Uses the vector engraving face — every segment is a
+// MoveTo or LineTo, identical to what the engraver's stepper will follow.
+//
+// (l.XMM, l.YMM) is treated as the TOP-LEFT of the glyph cell. The
+// translate target is the baseline = YMM + ascent*scale, so glyphs
+// render with their top edge at YMM.
+//
+// vector-effect="non-scaling-stroke" keeps the visible stroke width
+// constant regardless of the scale transform, matching the engraver's
+// fixed punch dot size.
+func renderTextRow(sb *strings.Builder, l lineLayout) {
+	face := faceForFont(l.FontID)
 	if face == nil {
 		return
 	}
-	// SH1E layout treats Size in points. Convert to the corresponding
-	// physical height in mm: ~0.33 mm/pt is the rule of thumb we use
-	// elsewhere in the file.
-	fontMM := float64(l.Size) * 0.33
-
-	// The bitmap is rendered in pixel units. Pick a scale factor so the
-	// glyph's em-square (≈16 px tall for Regular16) maps to fontMM.
-	const facePx = 16.0
-	scale := fontMM / facePx
-
-	// Baseline sits a cap-height below the top-left anchor. Glyph
-	// bounds.Min.Y is negative for the ascender region; rendering at
-	// y = ascentPx places the glyph top exactly at originY=0 in the
-	// pre-translate coordinate space.
-	const ascentPx = 13 // Comfortaa Regular16 ascent
-
-	// Horizontal alignment shifts the entire group. Compute the line's
-	// pixel width by walking glyphs once.
-	cursorPx := fixed.Int26_6(0)
-	prevR := rune(0)
-	for _, r := range l.Text {
-		if prevR != 0 {
-			cursorPx += face.Kern(prevR, r)
-		}
-		_, advance, ok := face.Glyph(r)
-		if ok {
-			cursorPx += advance
-		}
-		prevR = r
+	metrics := face.Metrics()
+	emHeight := float64(metrics.Height)
+	if emHeight <= 0 {
+		return
 	}
-	totalPx := float64(cursorPx) / 64.0
+	fontMM := float64(l.Size) * 0.33
+	scale := fontMM / emHeight
+
+	// First pass: total advance for horizontal alignment math.
+	totalAdvance := 0
+	for _, r := range l.Text {
+		adv, _, ok := face.Decode(r)
+		if ok {
+			totalAdvance += adv
+		}
+	}
 
 	originX := float64(l.XMM)
 	switch l.Alignment {
 	case sh1e.AlignCenter:
-		originX -= totalPx * scale * 0.5
+		originX -= float64(totalAdvance) * scale * 0.5
 	case sh1e.AlignRight:
-		originX -= totalPx * scale
+		originX -= float64(totalAdvance) * scale
 	}
+	baselineY := float64(l.YMM) + float64(metrics.Ascent)*scale
 
 	fmt.Fprintf(sb,
-		`<g transform="translate(%g %g) scale(%g)" fill="#111">`,
-		originX, float64(l.YMM)+float64(ascentPx)*scale, scale,
+		`<g transform="translate(%g %g) scale(%g)" fill="none" stroke="#111" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke">`,
+		originX, baselineY, scale,
 	)
 
-	// Second pass: actually emit rects.
-	cursorPx = 0
-	prevR = 0
+	cursorX := 0
 	for _, r := range l.Text {
-		if prevR != 0 {
-			cursorPx += face.Kern(prevR, r)
-		}
-		img, advance, ok := face.Glyph(r)
+		adv, segs, ok := face.Decode(r)
 		if !ok {
-			prevR = r
 			continue
 		}
-		cursorPxInt := int(cursorPx >> 6)
-		b := img.Bounds()
-		for y := b.Min.Y; y < b.Max.Y; y++ {
-			x := b.Min.X
-			for x < b.Max.X {
-				if img.AlphaAt(x, y).A < 0x80 {
-					x++
-					continue
-				}
-				runStart := x
-				for x < b.Max.X && img.AlphaAt(x, y).A >= 0x80 {
-					x++
-				}
-				fmt.Fprintf(sb,
-					`<rect x="%d" y="%d" width="%d" height="1"/>`,
-					cursorPxInt+runStart, y, x-runStart,
-				)
+		var d strings.Builder
+		for {
+			seg, hasMore := segs.Next()
+			if !hasMore {
+				break
+			}
+			switch seg.Op {
+			case vector.SegmentOpMoveTo:
+				fmt.Fprintf(&d, "M%d %d ", cursorX+seg.Arg.X, seg.Arg.Y)
+			case vector.SegmentOpLineTo:
+				fmt.Fprintf(&d, "L%d %d ", cursorX+seg.Arg.X, seg.Arg.Y)
 			}
 		}
-		cursorPx += advance
-		prevR = r
+		if d.Len() > 0 {
+			fmt.Fprintf(sb, `<path d="%s"/>`, d.String())
+		}
+		cursorX += adv
 	}
 	sb.WriteString(`</g>`)
 }

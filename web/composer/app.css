@@ -94,17 +94,20 @@ main {
 
 @media (min-width: 720px) {
   main {
-    grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.2fr);
+    /* Editor on the LEFT (taller column, fixed width); plate picker,
+       preview and actions stacked on the RIGHT. Matches the natural
+       composer flow: "pick a plate → type your text → see the result". */
+    grid-template-columns: minmax(320px, 1.2fr) minmax(320px, 1fr);
     grid-template-areas:
-      "tabs    tabs"
-      "preview editor"
-      "preview actions"
-      "footer  footer";
+      "editor plate"
+      "editor preview"
+      "editor actions"
+      "footer footer";
   }
-  .card.tabs-card     { grid-area: tabs;    }
+  .card.editor-card   { grid-area: editor;  align-self: start; }
+  .card.plate-card    { grid-area: plate;   align-self: start; }
   .card.preview-card  { grid-area: preview; align-self: start; }
-  .card.editor-card   { grid-area: editor;  }
-  .card.actions-card  { grid-area: actions; }
+  .card.actions-card  { grid-area: actions; align-self: start; }
   .card.footer-card   { grid-area: footer;  }
 }
 
