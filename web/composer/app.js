@@ -20,6 +20,12 @@ const els = {
   qrCanvas: document.getElementById("qr-canvas"),
   qrInfo: document.getElementById("qr-info"),
   qrClose: document.getElementById("qr-close"),
+  tabs: document.querySelectorAll(".tab"),
+  editorText: document.getElementById("editor-text"),
+  editorSVG: document.getElementById("editor-svg"),
+  svgFile: document.getElementById("svg-file"),
+  svgSummary: document.getElementById("svg-summary"),
+  svgError: document.getElementById("svg-error"),
 };
 
 // Build inputs for the largest possible plate; hide rows that don't fit
@@ -30,6 +36,8 @@ let wasmReady = false;
 let plateType = 0;
 let plateInfo = []; // populated from Go: [{id, name, w_mm, h_mm, max_lines}]
 let visibleLines = MAX_LINES_ANY_PLATE;
+let mode = "text"; // "text" | "svg"
+let svgPaths = []; // d-strings extracted from the uploaded SVG, if any
 
 function setStatus(text, error = false) {
   els.status.textContent = text;
@@ -105,34 +113,46 @@ function scheduleRefresh() {
 function refresh() {
   refreshTimer = null;
   if (!wasmReady) return;
+  if (mode === "svg") {
+    refreshSVGMode();
+  } else {
+    refreshTextMode();
+  }
+}
+
+function refreshTextMode() {
   const lines = readLines();
-  // Empty: render an empty plate so the geometry still shows.
   let bytes = null;
   if (lines.length > 0) {
     try {
       bytes = globalThis.composerEncodeText(plateType, lines);
     } catch (e) {
-      // Show the error in the size meter; preview still renders structurally.
       els.size.textContent = `error: ${e?.message ?? e}`;
       els.size.classList.add("error");
       els.preview.innerHTML = globalThis.composerPreviewText(plateType, lines);
       return;
     }
   }
-  let svg;
-  try {
-    svg = globalThis.composerPreviewText(plateType, lines);
-  } catch (e) {
-    els.preview.textContent = `preview error: ${e?.message ?? e}`;
-    return;
-  }
-  els.preview.innerHTML = svg;
+  els.preview.innerHTML = globalThis.composerPreviewText(plateType, lines);
   els.size.classList.remove("error");
-  if (bytes) {
-    els.size.textContent = `${bytes.length.toLocaleString("en-US")} B`;
-  } else {
-    els.size.textContent = "— B";
+  els.size.textContent = bytes ? `${bytes.length.toLocaleString("en-US")} B` : "— B";
+}
+
+function refreshSVGMode() {
+  let bytes = null;
+  if (svgPaths.length > 0) {
+    try {
+      bytes = globalThis.composerEncodeSVG(plateType, svgPaths);
+    } catch (e) {
+      els.size.textContent = `error: ${e?.message ?? e}`;
+      els.size.classList.add("error");
+      els.preview.innerHTML = globalThis.composerPreviewSVG(plateType, svgPaths);
+      return;
+    }
   }
+  els.preview.innerHTML = globalThis.composerPreviewSVG(plateType, svgPaths);
+  els.size.classList.remove("error");
+  els.size.textContent = bytes ? `${bytes.length.toLocaleString("en-US")} B` : "— B";
 }
 
 // hexDump formats bytes in a compact 8-bytes-per-row layout. Total ~33
@@ -161,15 +181,26 @@ function hexDump(bytes) {
 
 function showBytes() {
   if (!wasmReady) return;
-  const lines = readLines();
-  if (lines.length === 0) {
-    els.output.hidden = false;
-    els.output.classList.add("error");
-    els.output.textContent = "Enter at least one line of text first.";
-    return;
-  }
+  let bytes;
   try {
-    const bytes = globalThis.composerEncodeText(plateType, lines);
+    if (mode === "svg") {
+      if (svgPaths.length === 0) {
+        els.output.hidden = false;
+        els.output.classList.add("error");
+        els.output.textContent = "Upload an SVG file first.";
+        return;
+      }
+      bytes = globalThis.composerEncodeSVG(plateType, svgPaths);
+    } else {
+      const lines = readLines();
+      if (lines.length === 0) {
+        els.output.hidden = false;
+        els.output.classList.add("error");
+        els.output.textContent = "Enter at least one line of text first.";
+        return;
+      }
+      bytes = globalThis.composerEncodeText(plateType, lines);
+    }
     els.output.hidden = false;
     els.output.classList.remove("error");
     els.output.textContent = `SH1E envelope — ${bytes.length} bytes\n\n${hexDump(bytes)}`;
@@ -177,6 +208,44 @@ function showBytes() {
     els.output.hidden = false;
     els.output.classList.add("error");
     els.output.textContent = `Encode failed: ${e?.message ?? e}`;
+  }
+}
+
+function setMode(newMode) {
+  if (newMode === mode) return;
+  mode = newMode;
+  els.tabs.forEach((t) => {
+    const isActive = t.dataset.mode === mode;
+    t.classList.toggle("active", isActive);
+    t.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+  els.editorText.hidden = mode !== "text";
+  els.editorSVG.hidden = mode !== "svg";
+  refresh();
+}
+
+async function onSVGFile(ev) {
+  const f = ev.target.files?.[0];
+  if (!f) return;
+  els.svgError.hidden = true;
+  try {
+    const text = await f.text();
+    const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+    if (doc.querySelector("parsererror")) throw new Error("file isn't valid SVG");
+    const ds = [...doc.querySelectorAll("path")]
+      .map((p) => p.getAttribute("d"))
+      .filter(Boolean);
+    if (ds.length === 0) {
+      throw new Error("no <path d=\"...\"> elements found — flatten shapes to paths in your editor first");
+    }
+    svgPaths = ds;
+    els.svgSummary.textContent = `${f.name} — ${ds.length} path${ds.length === 1 ? "" : "s"}, ${ds.reduce((n, d) => n + d.length, 0)} chars total`;
+    refresh();
+  } catch (e) {
+    els.svgError.hidden = false;
+    els.svgError.textContent = String(e?.message ?? e);
+    svgPaths = [];
+    refresh();
   }
 }
 
@@ -210,18 +279,27 @@ async function loadWasm() {
 
 function showQR() {
   if (!wasmReady) return;
-  const lines = readLines();
-  if (lines.length === 0) {
-    setStatus("Enter at least one line first", true);
-    return;
-  }
+  let result;
   try {
-    const result = globalThis.composerQR(plateType, lines);
+    if (mode === "svg") {
+      if (svgPaths.length === 0) {
+        setStatus("Upload an SVG file first", true);
+        return;
+      }
+      result = globalThis.composerQRSVG(plateType, svgPaths);
+    } else {
+      const lines = readLines();
+      if (lines.length === 0) {
+        setStatus("Enter at least one line first", true);
+        return;
+      }
+      result = globalThis.composerQR(plateType, lines);
+    }
     els.qrCanvas.innerHTML = result.svg;
     els.qrInfo.textContent = `${result.bytes} B SH1E → QR ${result.modules}×${result.modules}`;
     els.qrOverlay.hidden = false;
     els.qrOverlay.setAttribute("aria-hidden", "false");
-    setStatus(`Ready — v${composerVersionString()}`);
+    setStatus(`Ready — ${composerVersionString()}`);
   } catch (e) {
     setStatus(`QR encode failed: ${e?.message ?? e}`, true);
   }
@@ -242,6 +320,8 @@ function composerVersionString() {
 els.btnBytes.addEventListener("click", showBytes);
 els.btnQR.addEventListener("click", showQR);
 els.qrClose.addEventListener("click", hideQR);
+els.tabs.forEach((t) => t.addEventListener("click", () => setMode(t.dataset.mode)));
+els.svgFile.addEventListener("change", onSVGFile);
 els.qrOverlay.addEventListener("click", (e) => {
   // Click outside the inner card dismisses; click inside (e.g. on the QR
   // itself) does nothing.

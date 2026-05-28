@@ -43,12 +43,38 @@
     </p>
   </section>
 
-  <section class="card glass editor-card" aria-label="Block text editor">
-    <div class="editor-head">
-      <h2>Block text</h2>
-      <small>One text block per row. ASCII only. SVG paths come later.</small>
+  <section class="card glass editor-card" aria-label="Editor">
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-mode="text" role="tab" aria-selected="true">Block text</button>
+      <button class="tab" data-mode="svg" role="tab" aria-selected="false">SVG paths</button>
     </div>
-    <ol id="lines" class="lines"></ol>
+
+    <div id="editor-text" class="editor-pane" data-mode="text">
+      <div class="editor-head">
+        <h2>Block text</h2>
+        <small>One text block per row. ASCII only.</small>
+      </div>
+      <ol id="lines" class="lines"></ol>
+    </div>
+
+    <div id="editor-svg" class="editor-pane" data-mode="svg" hidden>
+      <div class="editor-head">
+        <h2>SVG paths</h2>
+        <small>
+          Upload an .svg file. Each <code>&lt;path d=&quot;...&quot;&gt;</code>
+          element becomes one engrave stroke. Pre-flatten shapes and
+          transforms in your editor (Inkscape: <em>Object → Path</em>
+          then <em>Flatten Transforms</em>) — the composer reads
+          <code>d</code> attributes directly.
+        </small>
+      </div>
+      <label class="file-pick">
+        <input type="file" id="svg-file" accept=".svg,image/svg+xml">
+        <span>Pick SVG file</span>
+      </label>
+      <div id="svg-summary" class="svg-summary"></div>
+      <pre id="svg-error" class="error" hidden></pre>
+    </div>
   </section>
 
   <section class="card glass actions-card" aria-label="Output">

@@ -424,3 +424,14 @@ main > * { min-width: 0; }
   border-radius: 10px;
   cursor: pointer;
 }
+
+/* Editor tabs */
+.editor-card .tabs { margin-bottom: 12px; }
+.editor-pane[hidden] { display: none; }
+.svg-summary {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.file-pick { margin: 8px 0 0; }
