@@ -1,0 +1,104 @@
+/* SeedHammer v1 emulator-specific styles, layered on top of the
+   composer's app.css for the shared shell/card/glass primitives. */
+
+.emu-device-card { padding: 24px; }
+
+.emu-device {
+  display: flex;
+  gap: 32px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.emu-lcd-frame {
+  background: #0a0a0a;
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), inset 0 0 0 2px #2a2a2a;
+}
+#lcd {
+  display: block;
+  width: 320px;
+  height: 320px;
+  image-rendering: pixelated;
+  background: #000;
+  border-radius: 6px;
+}
+
+.emu-controls {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 28px;
+  align-items: center;
+}
+
+.emu-joystick {
+  display: grid;
+  grid-template-columns: repeat(3, 56px);
+  grid-template-rows: repeat(3, 56px);
+  gap: 4px;
+}
+.emu-joystick .jb.up     { grid-column: 2; grid-row: 1; }
+.emu-joystick .jb.left   { grid-column: 1; grid-row: 2; }
+.emu-joystick .jb.center { grid-column: 2; grid-row: 2; }
+.emu-joystick .jb.right  { grid-column: 3; grid-row: 2; }
+.emu-joystick .jb.down   { grid-column: 2; grid-row: 3; }
+
+.emu-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.emu-btn {
+  background: var(--surface-strong);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 18px;
+  user-select: none;
+  transition: transform 0.05s, background 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.emu-btn:active,
+.emu-btn.pressed {
+  background: var(--accent);
+  color: var(--accent-text);
+  transform: scale(0.94);
+  box-shadow: 0 2px 8px rgb(255 136 0 / 0.4);
+}
+
+.emu-btn.key {
+  width: 64px;
+  height: 56px;
+  font-size: 14px;
+}
+
+.emu-keymap {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.emu-keymap td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--hairline);
+  vertical-align: top;
+}
+.emu-keymap td:first-child { width: 14em; }
+.emu-keymap td:nth-child(2) { width: 8em; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.emu-keymap tr:last-child td { border-bottom: none; }
+.emu-keymap kbd {
+  background: var(--surface-strong);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  display: inline-block;
+}

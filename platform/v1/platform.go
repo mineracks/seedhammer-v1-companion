@@ -19,8 +19,6 @@ package v1
 
 import (
 	"image"
-
-	"github.com/mineracks/seedhammer-v1-companion/font/constant"
 )
 
 // Button identifies one of the eight physical inputs on the v1 hardware.
@@ -55,15 +53,4 @@ type Platform interface {
 	// Display writes a frame to the LCD-equivalent. The image is the
 	// full screen at the platform's native resolution (240×240 for v1).
 	Display(frame image.Image)
-
-	// EngraveFont returns the vector engraving face. Both real and
-	// emulator backends return the same data — it's bundled with the
-	// firmware.
-	EngraveFont() *constant.Face
 }
-
-// constant.Face is the type alias we use in the public surface, re-exported
-// here so callers don't have to import font/vector directly.
-// (Today this is just *vector.Face under the hood; the alias lets us swap
-// implementations without rippling change through the GUI.)
-type Face = constant.Face

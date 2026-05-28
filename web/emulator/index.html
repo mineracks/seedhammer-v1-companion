@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a1a1a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f5f5f5" media="(prefers-color-scheme: light)">
+<title>SeedHammer v1 — emulator</title>
+<link rel="stylesheet" href="../composer/app.css">
+<link rel="stylesheet" href="./app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36.6 36.6'%3E%3Crect width='36.6' height='36.6' rx='7' fill='%23ff8800'/%3E%3C/svg%3E">
+</head>
+<body>
+<noscript>This app requires JavaScript and WebAssembly.</noscript>
+
+<header class="bar glass">
+  <h1>SeedHammer v1 Emulator</h1>
+  <div class="bar-actions">
+    <span id="status" class="status" aria-live="polite">Loading…</span>
+  </div>
+</header>
+
+<main>
+  <section class="card glass emu-device-card" aria-label="Device">
+    <div class="emu-device">
+      <div class="emu-lcd-frame">
+        <canvas id="lcd" width="240" height="240" aria-label="v1 LCD"></canvas>
+      </div>
+      <div class="emu-controls">
+        <div class="emu-joystick" role="group" aria-label="Joystick">
+          <button class="emu-btn jb up" data-btn="0" aria-label="Up">▲</button>
+          <button class="emu-btn jb left" data-btn="2" aria-label="Left">◀</button>
+          <button class="emu-btn jb center" data-btn="4" aria-label="Center">●</button>
+          <button class="emu-btn jb right" data-btn="3" aria-label="Right">▶</button>
+          <button class="emu-btn jb down" data-btn="1" aria-label="Down">▼</button>
+        </div>
+        <div class="emu-keys" role="group" aria-label="Side keys">
+          <button class="emu-btn key" data-btn="5" aria-label="Button 1">K1</button>
+          <button class="emu-btn key" data-btn="6" aria-label="Button 2">K2</button>
+          <button class="emu-btn key" data-btn="7" aria-label="Button 3">K3</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card glass" aria-label="Keyboard mapping">
+    <div class="editor-head">
+      <h2>Keyboard shortcuts</h2>
+      <small>Hardware buttons map 1:1 to keys.</small>
+    </div>
+    <table class="emu-keymap">
+      <tbody>
+        <tr><td><kbd>↑</kbd></td><td>Up</td><td>Joystick north</td></tr>
+        <tr><td><kbd>↓</kbd></td><td>Down</td><td>Joystick south</td></tr>
+        <tr><td><kbd>←</kbd></td><td>Left</td><td>Joystick west</td></tr>
+        <tr><td><kbd>→</kbd></td><td>Right</td><td>Joystick east</td></tr>
+        <tr><td><kbd>Enter</kbd> / <kbd>Space</kbd></td><td>Center</td><td>Joystick press / primary confirm</td></tr>
+        <tr><td><kbd>1</kbd></td><td>Button 1</td><td>Back</td></tr>
+        <tr><td><kbd>2</kbd></td><td>Button 2</td><td>Secondary action</td></tr>
+        <tr><td><kbd>3</kbd></td><td>Button 3</td><td>Primary confirm</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer class="card glass footer-card">
+    <p>
+      Phase 2 scaffolding stage — the GUI itself isn't lifted yet, but the
+      LCD canvas, button input layer, and platform.Platform contract are
+      all in place. The boot screen below shows the 240×240 frame rendered
+      by the Go runtime; press any mapped key (or click any button) and
+      the Go side echoes the event to the browser console.
+      See <a href="https://github.com/mineracks/seedhammer-v1-companion">the repo</a>.
+    </p>
+  </footer>
+</main>
+
+<script src="../composer/wasm_exec.js"></script>
+<script src="./app.js" type="module"></script>
+</body>
+</html>
