@@ -67,9 +67,10 @@ directly. Most of the inspiration for this project comes from there.
 
 - ☐ **Phase 1** — composer port (Go-to-WASM, SH1E reference encoder, web UI)
 - ☐ Phase 2 — v1 emulator (firmware-in-browser, Gangleri42-faithful UI shell)
-- ◐ Phase 2.5 — SeedSigner emulator + QR handoff (firmware boots + navigates
-  in-browser via Pyodide as of 2026-06-11; camera/QR handoff still open —
-  see `web/seedsigner-sim/README.md`)
+- ☑ Phase 2.5 — SeedSigner emulator + QR handoff (done 2026-06-11: Pyodide
+  firmware-in-browser, webcam/drop QR scanning via jsQR, one-click handoff
+  into the v1 emulator's native decoder, SeedSigner+ 320×240 profiles,
+  21 locales, fully-local vendored runtime — `web/seedsigner-sim/README.md`)
 - ☐ Phase 3 — combined three-pane sim
 - ☐ Phase 4 — real-device validation on real v1 hardware
 - ☐ Phase 5 (optional) — ColdCard emulator (port from Gangleri42's fork)

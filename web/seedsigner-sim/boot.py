@@ -11,7 +11,13 @@
 #   sleep_ms(ms)          true blocking sleep via Atomics.wait (no CPU burn)
 #   blit(w, h, rgba)      push a full RGBA frame to the visible canvas
 #   status(text)          progress line for the page header
+#   get_profile() -> str  display_config value chosen on the page
+#   camera_start()        ask the main thread to begin webcam frame delivery
+#   camera_stop()         stop webcam frame delivery
+#   camera_read() -> {w,h,data}|None   latest RGB frame from the camera SAB
+#   decode_qr(w, h, rgba) -> bytes|None   jsQR decode of an RGBA image
 
+import json
 import os
 import sys
 import time
@@ -34,6 +40,15 @@ def _sleep(seconds):
         shsim.sleep_ms(ms)
 
 time.sleep = _sleep
+
+
+# ── device profile → settings.json (read by Settings at first boot) ─────
+# Values are upstream's SettingsConstants display_config options:
+# st7789_240x240 (Classic), st7789_320x240 (SeedSigner+),
+# ili9341_320x240 (SeedSigner+ panel variant).
+_profile = str(shsim.get_profile() or "st7789_240x240")
+with open("settings.json", "w") as _f:
+    json.dump({"display_config": _profile}, _f)
 
 
 # ── RPi.GPIO fake backed by the shared keyboard bitmask ──────────────────
@@ -70,24 +85,136 @@ _rpi.GPIO = GPIO
 sys.modules["RPi"] = _rpi
 sys.modules["RPi.GPIO"] = GPIO
 
-# Hardware that has no browser equivalent (yet). Same set the upstream
-# screenshot generator mocks. Camera/QR-scan gets a real shim later —
-# browser-side decode feeding a fake camera (seedsigner-reuse.md, open q. 3).
-for _name in (
-    "picamera",
-    "picamera.array",
-    "pyzbar",
-    "pyzbar.pyzbar",
-    "seedsigner.hardware.microsd",
-):
+# Hardware with no browser equivalent. (Camera and pyzbar get real shims
+# below; this is just the remainder of the screenshot generator's mock set.)
+for _name in ("picamera", "picamera.array", "seedsigner.hardware.microsd"):
     sys.modules[_name] = MagicMock()
+
+
+# ── pyzbar → jsQR ────────────────────────────────────────────────────────
+# DecodeQR only uses pyzbar.decode(img, symbols=[QRCODE], binary=...) and
+# reads .data off each result. jsQR's binaryData serves both text and
+# binary (CompactSeedQR) payloads.
+import numpy as _np
+from pyodide.ffi import to_js
+
+_pyzbar_mod = types.ModuleType("pyzbar")
+_pyzbar_sub = types.ModuleType("pyzbar.pyzbar")
+
+
+class ZBarSymbol:
+    QRCODE = "QRCODE"
+
+
+class _Decoded:
+    __slots__ = ("data", "type")
+
+    def __init__(self, data):
+        self.data = data
+        self.type = "QRCODE"
+
+
+def _pyzbar_decode(image, symbols=None, binary=False):
+    if hasattr(image, "convert"):  # PIL image
+        rgba = image.convert("RGBA")
+        w, h = rgba.size
+        buf = rgba.tobytes()
+    else:  # numpy (h, w, 3) RGB array from the camera shim
+        h, w = image.shape[:2]
+        rgba = _np.dstack([image, _np.full((h, w), 255, dtype=_np.uint8)])
+        buf = rgba.tobytes()
+    res = shsim.decode_qr(w, h, to_js(buf))
+    if res is None:
+        return []
+    return [_Decoded(bytes(res.to_py()))]
+
+
+_pyzbar_sub.decode = _pyzbar_decode
+_pyzbar_sub.ZBarSymbol = ZBarSymbol
+_pyzbar_mod.pyzbar = _pyzbar_sub
+sys.modules["pyzbar"] = _pyzbar_mod
+sys.modules["pyzbar.pyzbar"] = _pyzbar_sub
+
+
+# ── camera → browser webcam (or dropped QR image) via SAB frames ────────
+# Mirrors upstream Camera's API surface, including the private
+# `_video_stream` attr that ScanScreen's decode loop pokes directly.
+# Divergences: no 90° rotation (webcams are upright, the Pi cam isn't),
+# and the LCD live preview is a JS-side <video> overlay because
+# LivePreviewThread can't run (no threads in Pyodide).
+from PIL import Image
+
+_camera_mod = types.ModuleType("seedsigner.hardware.camera")
+
+
+class CameraConnectionError(Exception):
+    pass
+
+
+class Camera:
+    _instance = None
+
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def __init__(self):
+        self._video_stream = None
+
+    def _read_frame(self):
+        fr = shsim.camera_read()
+        if fr is None:
+            return None
+        w, h = int(fr.w), int(fr.h)
+        data = fr.data.to_py()
+        return _np.frombuffer(data, dtype=_np.uint8).reshape((h, w, 3))
+
+    def start_video_stream_mode(self, resolution=(512, 384), framerate=12,
+                                format="bgr"):
+        shsim.camera_start()
+        self._video_stream = self  # truthy sentinel; upstream stores PiVideoStream
+
+    def read_video_stream(self, as_image=False):
+        if not self._video_stream:
+            raise Exception("Must call start_video_stream first.")
+        arr = self._read_frame()
+        if arr is None:
+            time.sleep(0.05)  # don't let the decode loop spin while no frames
+            return None
+        time.sleep(0.02)  # pace decode at ≲30fps; webcam pumps ~10fps anyway
+        if not as_image:
+            return arr
+        return Image.fromarray(arr, "RGB").convert("RGBA")
+
+    def stop_video_stream_mode(self):
+        self._video_stream = None
+        shsim.camera_stop()
+
+    def start_single_frame_mode(self, resolution=(720, 480)):
+        shsim.camera_start()
+
+    def capture_frame(self):
+        arr = self._read_frame()
+        if arr is None:
+            raise CameraConnectionError()
+        return Image.fromarray(arr, "RGB")
+
+    def stop_single_frame_mode(self):
+        shsim.camera_stop()
+
+
+_camera_mod.Camera = Camera
+_camera_mod.CameraConnectionError = CameraConnectionError
+sys.modules["seedsigner.hardware.camera"] = _camera_mod
 
 
 # ── threads ──────────────────────────────────────────────────────────────
 # Pyodide cannot start Python threads. BackgroundImportThread MUST still
 # run (Controller.storage busy-waits on the _storage it seeds) — inline is
 # fine, it's a finite pre-import pass. Everything else (toast managers,
-# microsd watcher, screensaver helpers) is cosmetic; skip them.
+# LivePreviewThread, microsd watcher) is cosmetic; skip them.
 from seedsigner.models import threads as _ss_threads
 
 def _thread_start(self):
@@ -98,9 +225,6 @@ _ss_threads.BaseThread.start = _thread_start
 
 
 # ── display driver → JS canvas ───────────────────────────────────────────
-from pyodide.ffi import to_js
-from PIL import Image
-
 from seedsigner.hardware.displays import display_driver as _dd
 
 
@@ -108,7 +232,14 @@ class CanvasDisplay(_dd.BaseDisplayDriver):
     """Replaces ST7789/ILI9341 SPI drivers; frames go to the page canvas."""
 
     def __init__(self, display_type, width, height):
-        super().__init__(_width=width, _height=height)
+        # width/height arrive as the landscape canvas dims from the
+        # display_config string. Renderer expects natively-portrait
+        # drivers (ili9341/ili9486) to report swapped width/height —
+        # it un-swaps them when sizing its canvas.
+        if display_type in (_dd.DISPLAY_TYPE__ILI9341, _dd.DISPLAY_TYPE__ILI9486):
+            super().__init__(_width=height, _height=width)
+        else:
+            super().__init__(_width=width, _height=height)
         self.display_type = display_type
         self._fb = Image.new("RGB", (width, height))
 

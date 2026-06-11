@@ -16,8 +16,9 @@ node_modules/
 dist/
 .parcel-cache/
 
-# Pyodide bundle (large; downloaded at build time)
-web/seedsigner-sim/pyodide/dist/
+# SeedSigner sim vendor artifacts (large; rebuilt from pinned SHAs/versions
+# by web/seedsigner-sim/build.sh + vendor-pyodide.sh)
+web/seedsigner-sim/vendor/
 
 # Editor / OS
 .DS_Store

@@ -16,6 +16,11 @@
 <header class="bar glass">
   <h1>SeedSigner Simulator</h1>
   <div class="bar-actions">
+    <select id="profile" class="sss-profile" aria-label="Device profile">
+      <option value="st7789_240x240">Classic 1.3″ 240×240</option>
+      <option value="st7789_320x240">SeedSigner+ 2.8″ 320×240</option>
+      <option value="ili9341_320x240">SeedSigner+ (ILI9341 panel)</option>
+    </select>
     <span id="status" class="status" aria-live="polite">Loading…</span>
   </div>
 </header>
@@ -29,6 +34,10 @@
       <div class="sss-lcd-bezel">
         <div class="sss-lcd-screen">
           <canvas id="lcd" width="240" height="240" aria-label="SeedSigner LCD"></canvas>
+          <!-- Webcam overlay shown while the firmware has the camera open.
+               The firmware's LivePreviewThread can't run under Pyodide
+               (no threads), so the page supplies the visual feed. -->
+          <video id="campreview" muted playsinline aria-hidden="true"></video>
         </div>
       </div>
 
@@ -46,6 +55,15 @@
           <button class="sss-key" data-btn="7" aria-label="Key 3">3</button>
         </div>
       </div>
+    </div>
+
+    <div class="sss-actions">
+      <button id="handoff" class="btn" type="button"
+        title="Decode the QR currently on the SeedSigner screen and open it in the SeedHammer v1 emulator">
+        Hand off QR → SeedHammer
+      </button>
+      <small>Scanning: webcam opens automatically, or drop a QR image
+        anywhere on the device.</small>
     </div>
   </section>
 
@@ -67,11 +85,10 @@
     <p>
       The upstream SeedSigner firmware (Python, pinned in
       <code>docs/architecture/BASELINES.md</code>) running verbatim in your
-      browser via Pyodide — the emulator <em>is</em> the firmware. Camera/QR
-      scanning and the QR handoff to the SeedHammer v1 emulator are not wired
-      up yet. English-only until the translations submodule is bundled.
-      Nothing leaves your browser; even so, do not enter a real seed in a
-      simulator.
+      browser via Pyodide — the emulator <em>is</em> the firmware. QR scanning
+      uses your webcam (or a dropped image) decoded by jsQR; exports can be
+      handed off straight to the SeedHammer v1 emulator. Nothing leaves your
+      browser; even so, do not enter a real seed in a simulator.
     </p>
   </footer>
 </main>

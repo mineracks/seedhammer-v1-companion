@@ -153,6 +153,48 @@ async function loadWasm() {
   }
   wasmReady = true;
   setStatus(`Ready — ${globalThis.emulatorVersion()}`);
+  intakeHandoff();
+}
+
+/* ─── QR handoff intake (from the SeedSigner sim) ────────────────────────
+ * The SeedSigner sim stores {payload: base64, frame: dataURL} under
+ * localStorage["sh1-handoff"] and opens this page. We inject the decoded
+ * payload + preview into the Go platform; the firmware consumes it when
+ * the user navigates to a scan screen (Backup → scan seed). One-shot:
+ * the key is removed as soon as it's read. */
+async function intakeHandoff() {
+  let raw;
+  try {
+    raw = localStorage.getItem("sh1-handoff");
+    if (raw) localStorage.removeItem("sh1-handoff");
+  } catch { return; }
+  if (!raw) return;
+
+  try {
+    const { payload, frame } = JSON.parse(raw);
+    const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
+
+    let rgba = null, w = 0, h = 0;
+    if (frame) {
+      const img = new Image();
+      await new Promise((res, rej) => {
+        img.onload = res;
+        img.onerror = rej;
+        img.src = frame;
+      });
+      const c = document.createElement("canvas");
+      c.width = w = img.width;
+      c.height = h = img.height;
+      const cx = c.getContext("2d");
+      cx.drawImage(img, 0, 0);
+      rgba = new Uint8Array(cx.getImageData(0, 0, w, h).data.buffer);
+    }
+
+    globalThis.emulatorInjectQR(bytes, rgba, w, h);
+    setStatus("QR received from SeedSigner — open the firmware's scan screen to load it");
+  } catch (e) {
+    console.error("handoff intake failed:", e);
+  }
 }
 
 loadWasm().catch((e) => {

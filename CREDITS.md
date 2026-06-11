@@ -55,7 +55,16 @@ courtesy and to make code provenance traceable.
 - **`periph.io/x/conn/v3`** + **`periph.io/x/host/v3`** — Apache 2.0 — GPIO
   library, brought in via upstream SeedHammer's `driver/wshat/`.
 - **Pyodide** — MPL-2.0 — Python-in-WASM runtime used to host the
-  SeedSigner emulator in-browser. See `web/seedsigner-sim/pyodide/`.
+  SeedSigner emulator in-browser. Vendored at `web/seedsigner-sim/vendor/pyodide/`
+  by `vendor-pyodide.sh`.
+- **jsQR** (cozmo/jsQR) — Apache 2.0 — JS QR decoder backing the sim's
+  `pyzbar` shim and the handoff button. Vendored at
+  `web/seedsigner-sim/vendor/jsqr.js`.
+- **seedsigner-translations** (SeedSigner project) — MIT — 21 locales +
+  Noto script fonts (SIL OFL), compiled/bundled into
+  `vendor/seedsigner-bundle.zip` by `build.sh`.
+- **embit / qrcode / urtypes** — MIT — pure-Python deps of the SeedSigner
+  firmware, pip-vendored into the bundle at upstream's pinned versions.
 
 ## Contributing
 

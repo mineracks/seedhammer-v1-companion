@@ -7,8 +7,13 @@
 //   - Display: a 240×240 canvas, painted from Go RGBA via JS callback
 //   - Input: keyboard + on-screen button events through gui.ButtonEvent
 //   - Engraver: a no-op stub (the browser doesn't drive real hardware)
-//   - Camera: stub that emits empty FrameEvents (real QR-scan handoff
-//     lands once the SeedSigner sim wiring lands in Phase 2.5)
+//   - Camera: QR handoff injection. emulatorInjectQR(payload, rgba, w, h)
+//     stores a decoded QR payload + preview frame; CameraFrame() then
+//     emits the preview as a FrameEvent and ScanQR() returns the payload
+//     (one-shot), so the firmware's own decoder chain (ur / nonstandard /
+//     seedqr) consumes it exactly as if the camera had seen the QR.
+//     Without an injection pending, the camera stays in its stubbed
+//     "no camera" state.
 //
 // Build:
 //
@@ -30,7 +35,7 @@ import (
 	v1 "github.com/mineracks/seedhammer-v1-companion/platform/v1"
 )
 
-const emulatorVersion = "v0.2-phase2-gui"
+const emulatorVersion = "v0.3-phase2.5-handoff"
 
 const (
 	lcdWidth  = 240
@@ -51,6 +56,12 @@ type browserPlatform struct {
 	pending   []gui.Event
 	dirtyRect image.Rectangle
 	chunkSent bool
+
+	// QR handoff injection (emulatorInjectQR). injPayload is returned by
+	// the next ScanQR call; injFrame is the camera-preview image shown
+	// while the injection is pending.
+	injPayload []byte
+	injFrame   *image.YCbCr
 }
 
 func newBrowserPlatform() *browserPlatform {
@@ -160,12 +171,19 @@ func (p *browserPlatform) EngraverParams() engrave.Params {
 }
 
 func (p *browserPlatform) CameraFrame(size image.Point) {
-	// Stub: no camera in the browser yet. Emit an error FrameEvent so
-	// the gui's QR-scan screen stays in its "no camera" state instead
-	// of waiting forever.
 	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.injPayload != nil {
+		// Handoff pending: show the injected preview. The gui only reads
+		// the Y plane (it grayscales the feed), so injFrame is YCbCr with
+		// luminance filled and neutral chroma.
+		p.pending = append(p.pending, gui.FrameEvent{Image: p.injFrame}.Event())
+		return
+	}
+	// Stub: no live camera in the browser. Emit an error FrameEvent so
+	// the gui's QR-scan screen shows its "no camera" state instead of
+	// waiting forever.
 	p.pending = append(p.pending, gui.FrameEvent{Error: errCameraStubbed}.Event())
-	p.mu.Unlock()
 }
 
 func (p *browserPlatform) Now() time.Time { return time.Now() }
@@ -209,9 +227,19 @@ func (p *browserPlatform) flushFrame() {
 }
 
 func (p *browserPlatform) ScanQR(qr *image.Gray) ([][]byte, error) {
-	// Stub: no decodes. Real implementation lands when SeedSigner sim
-	// handoff wires up — the mock camera reads a sibling pane's canvas.
-	return nil, nil
+	// One-shot: hand the injected payload to the firmware's decoder
+	// chain (ur / nonstandard / seedqr). The qr image is ignored — JS
+	// already decoded the pixels (jsQR); the payload re-enters the same
+	// parse path a real camera decode would.
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.injPayload == nil {
+		return nil, nil
+	}
+	res := [][]byte{p.injPayload}
+	p.injPayload = nil
+	p.injFrame = nil
+	return res, nil
 }
 
 func (p *browserPlatform) Debug() bool { return false }
@@ -241,6 +269,7 @@ func main() {
 	js.Global().Set("emulatorVersion", js.FuncOf(exportVersion))
 	js.Global().Set("emulatorPushEvent", js.FuncOf(exportPushEvent))
 	js.Global().Set("emulatorSetSDCard", js.FuncOf(exportSetSDCard))
+	js.Global().Set("emulatorInjectQR", js.FuncOf(exportInjectQR))
 	js.Global().Set("emulatorLCDSize", js.ValueOf(map[string]any{
 		"w": lcdWidth, "h": lcdHeight,
 	}))
@@ -294,6 +323,54 @@ func exportSetSDCard(this js.Value, args []js.Value) any {
 	plat.pending = append(plat.pending, gui.SDCardEvent{Inserted: inserted}.Event())
 	plat.mu.Unlock()
 	plat.signalWake() // unblock any in-flight Events() wait
+	return nil
+}
+
+// exportInjectQR: emulatorInjectQR(payload:Uint8Array, rgba:Uint8ClampedArray|null, w:int, h:int)
+//
+// QR handoff from the SeedSigner sim (or any QR source). payload is the
+// decoded QR contents; rgba is an optional camera-preview image of the QR
+// as the user saw it. The firmware consumes the payload via ScanQR when
+// the user navigates to a scan screen.
+func exportInjectQR(this js.Value, args []js.Value) any {
+	if len(args) < 1 {
+		return nil
+	}
+	payload := make([]byte, args[0].Length())
+	js.CopyBytesToGo(payload, args[0])
+	if len(payload) == 0 {
+		return nil
+	}
+
+	// Build the YCbCr preview the gui expects (it only reads the Y plane).
+	w, h := 8, 8
+	var rgba []byte
+	if len(args) >= 4 && !args[1].IsNull() && !args[1].IsUndefined() {
+		w, h = args[2].Int(), args[3].Int()
+		rgba = make([]byte, args[1].Length())
+		js.CopyBytesToGo(rgba, args[1])
+	}
+	frame := image.NewYCbCr(image.Rect(0, 0, w, h), image.YCbCrSubsampleRatio420)
+	for i := range frame.Cb {
+		frame.Cb[i], frame.Cr[i] = 128, 128
+	}
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			luma := byte(0xff) // white frame when no preview supplied
+			if rgba != nil {
+				o := (y*w + x) * 4
+				// integer BT.601 luma
+				luma = byte((299*int(rgba[o]) + 587*int(rgba[o+1]) + 114*int(rgba[o+2])) / 1000)
+			}
+			frame.Y[y*frame.YStride+x] = luma
+		}
+	}
+
+	plat.mu.Lock()
+	plat.injPayload = payload
+	plat.injFrame = frame
+	plat.mu.Unlock()
+	plat.signalWake()
 	return nil
 }
 
