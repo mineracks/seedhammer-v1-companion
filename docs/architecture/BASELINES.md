@@ -138,6 +138,32 @@ prep docs that still cite v1.0.0 paths, see the path-mapping table in the
   `ninepatch/` in the v1.2.0 refactor
 - `backup/backup.go` — v1 plate-size constants (SmallPlate / SquarePlate / LargePlate)
 
+## SeedSigner upstream (SeedSigner/seedsigner @ dev) — pinned 2026-06-11
+
+| | |
+|---|---|
+| Branch | `dev` |
+| **Commit SHA** | **`e0a80d4b33b8eb7fb1e9fd14a27b7cd11c7d2cd6`** |
+| HEAD date | 2026-06-09 (merge of upstream PR #900) |
+| Firmware VERSION | `0.8.7` (per `src/seedsigner/controller.py`) |
+| Repo | https://github.com/SeedSigner/seedsigner (mirrored at https://git.mineracks.com/seedsigner/seedsigner) |
+| License | MIT — SeedSigner-derived files ship segregated under `web/seedsigner-sim/vendor/` with the MIT notice retained |
+| Why this ref | Phase 2.5 bundles upstream Python verbatim via Pyodide (see [seedsigner-reuse.md](seedsigner-reuse.md), option (c)). `dev` is upstream's integration branch and the ref their own screenshot generator targets. |
+
+### Phase 2.5 caveats recorded at pin time
+
+- `src/seedsigner/resources/seedsigner-translations` is a **git submodule**
+  (not populated in our Gitea mirror clone). Without its `.mo` files,
+  `SettingsConstants.get_detected_languages()` detects English only — the
+  sim ships English-only until we mirror + bundle the translations repo.
+- Pyodide's Pillow lacks libraqm (`ImageFont.core.HAVE_RAQM == False`), so
+  complex-script text shaping may differ from device renders. Irrelevant
+  while English-only; revisit when bundling translations.
+- Pure-Python deps vendored at pinned versions from `requirements.txt`:
+  `embit==0.8.0`, `qrcode==7.3.1`, `urtypes==1.0.1`. `pyzbar` (C, camera QR
+  decode) is mocked — browser-side QR decode is planned to come from the JS
+  side instead (camera shim, see seedsigner-reuse.md open question 3).
+
 ## License audit (verified 2026-05-28)
 
 Both repos use the **Unlicense** (public-domain dedication), not MIT as

@@ -1,0 +1,127 @@
+/* SeedSigner sim — Orange Pill-inspired chassis, portrait orientation:
+   recessed LCD up top, WaveShare-HAT controls (disc joystick left, three
+   stacked keys right) below. Borrows the machined-metal treatment from the
+   v1 emulator's chassis. */
+
+.sss-device-card {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.sss-chassis {
+  --pill-orange: #ff7a1f;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 30px 26px;
+  background:
+    linear-gradient(180deg, #ff8a30 0%, var(--pill-orange) 55%, #ed6b14 100%);
+  border-radius: 60px; /* pill */
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.35),
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.18),
+    inset 0 2px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.22);
+  width: min(380px, 100%);
+}
+
+/* ─── LCD recess ──────────────────────────────────────────────── */
+
+.sss-lcd-bezel {
+  padding: 12px;
+  background: #111;
+  border-radius: 14px;
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.8),
+    0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.sss-lcd-screen {
+  line-height: 0;
+}
+
+#lcd {
+  width: 240px;
+  height: 240px;
+  image-rendering: pixelated;
+  background: #000;
+}
+
+@media (min-width: 640px) {
+  #lcd { width: 288px; height: 288px; } /* 1.2× upscale, stays crisp */
+}
+
+/* ─── Controls row ────────────────────────────────────────────── */
+
+.sss-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 8px;
+}
+
+.sss-joystick {
+  position: relative;
+  display: grid;
+  grid-template-areas:
+    ".    up    ."
+    "left mid   right"
+    ".    down  .";
+  background: radial-gradient(circle at 35% 30%, #3a3a3a, #181818 70%);
+  border-radius: 50%;
+  padding: 6px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    0 4px 10px rgba(0, 0, 0, 0.45);
+}
+
+.sss-disc-zone {
+  width: 38px;
+  height: 38px;
+  border: none;
+  background: transparent;
+  color: #cfcfcf;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.sss-disc-zone:active { color: #fff; background: rgba(255, 255, 255, 0.12); }
+.disc-up { grid-area: up; }
+.disc-down { grid-area: down; }
+.disc-left { grid-area: left; }
+.disc-right { grid-area: right; }
+.disc-center {
+  grid-area: mid;
+  background: radial-gradient(circle at 35% 30%, #555, #222 75%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.sss-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sss-key {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  color: #ddd;
+  font-weight: 600;
+  background: radial-gradient(circle at 35% 30%, #444, #1c1c1c 75%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 3px 8px rgba(0, 0, 0, 0.4);
+}
+
+.sss-key:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.6);
+}

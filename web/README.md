@@ -13,7 +13,11 @@ Static-site assets for each browser target.
 Each subdirectory has its own `index.html`, `app.js`, `app.css`,
 `manifest.webmanifest`, `sw.js`, modelled on Gangleri42's PWA shells.
 
-Build pipeline (TBD — likely Vite or a small `make` rule that wires
-`go build -o app.wasm ./cmd/X` and copies static files to `dist/`).
+Build: each shell has its own `build.sh` (Go-to-WASM for composer/emulator;
+vendor-bundle zip for seedsigner-sim).
 
-Status: skeleton only; shells lifted in Phase 1.
+Serve with `python3 ../tools/serve.py` (NOT plain `http.server`) — the
+SeedSigner sim needs COOP/COEP headers for SharedArrayBuffer; they're
+harmless for the Go-WASM shells.
+
+Status: composer + emulator + seedsigner-sim live; `combined/` not started.
