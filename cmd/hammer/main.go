@@ -183,7 +183,7 @@ func textPlan(txt string, em int, area image.Rectangle) engrave.Plan {
 	// Drop what it cannot draw and say so, rather than panicking mid-plan.
 	f := face()
 	var kept, dropped []rune
-	for _, r := range txt {
+	for _, r := range strings.ToUpper(txt) { // the face has no lowercase; upstream uppercases titles too
 		if r == '\n' {
 			kept = append(kept, r)
 			continue
