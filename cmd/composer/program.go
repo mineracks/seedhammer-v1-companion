@@ -25,11 +25,27 @@ import (
 	"github.com/mineracks/seedhammer-v1-companion/plate"
 )
 
+// A Go panic inside a js.FuncOf callback takes the whole WASM program down, after which every
+// export returns undefined (seen in Any Two Keys on 2026-10-07 as "undefined is not an object
+// (evaluating 'd.side_a')"). So these exports never panic: an error comes back as {error: "..."}.
+func fail(err error) any { return js.ValueOf(map[string]any{"error": err.Error()}) }
+
+func guarded(f func(js.Value, []js.Value) any) func(js.Value, []js.Value) any {
+	return func(this js.Value, args []js.Value) (out any) {
+		defer func() {
+			if r := recover(); r != nil {
+				out = fail(fmt.Errorf("engine: %v", r))
+			}
+		}()
+		return f(this, args)
+	}
+}
+
 func init() {
-	js.Global().Set("composerBuildDesign", js.FuncOf(exportBuildDesign))
-	js.Global().Set("composerShareDesign", js.FuncOf(exportShareDesign))
-	js.Global().Set("composerProgram", js.FuncOf(exportProgram))
-	js.Global().Set("composerPreview", js.FuncOf(exportPreview))
+	js.Global().Set("composerBuildDesign", js.FuncOf(guarded(exportBuildDesign)))
+	js.Global().Set("composerShareDesign", js.FuncOf(guarded(exportShareDesign)))
+	js.Global().Set("composerProgram", js.FuncOf(guarded(exportProgram)))
+	js.Global().Set("composerPreview", js.FuncOf(guarded(exportPreview)))
 }
 
 type designJSON struct {
@@ -60,11 +76,11 @@ type designJSON struct {
 
 func exportBuildDesign(this js.Value, args []js.Value) any {
 	if len(args) != 1 {
-		return jsError(fmt.Errorf("expected (json)"))
+		return fail(fmt.Errorf("expected (json)"))
 	}
 	var in designJSON
 	if err := json.Unmarshal([]byte(args[0].String()), &in); err != nil {
-		return jsError(fmt.Errorf("design json: %w", err))
+		return fail(fmt.Errorf("design json: %w", err))
 	}
 	d := sh1e.Design{PlateType: sh1e.PlateType(in.Plate)}
 	for _, t := range in.TextBlocks {
@@ -86,7 +102,7 @@ func exportBuildDesign(this js.Value, args []js.Value) any {
 	}
 	b, err := sh1e.Encode(d)
 	if err != nil {
-		return jsError(err)
+		return fail(err)
 	}
 	return uint8Array(b)
 }
@@ -103,23 +119,23 @@ type shareJSON struct {
 
 func exportShareDesign(this js.Value, args []js.Value) any {
 	if len(args) != 1 {
-		return jsError(fmt.Errorf("expected (json)"))
+		return fail(fmt.Errorf("expected (json)"))
 	}
 	var in shareJSON
 	if err := json.Unmarshal([]byte(args[0].String()), &in); err != nil {
-		return jsError(fmt.Errorf("share json: %w", err))
+		return fail(fmt.Errorf("share json: %w", err))
 	}
 	a, b, err := plate.ShareDesign(plate.Share{Title: in.Title, UrType: in.UrType, Fingerprint: in.Fingerprint, K: in.K, N: in.N, Index: in.Index, Payload: in.Payload})
 	if err != nil {
-		return jsError(err)
+		return fail(err)
 	}
 	ea, err := sh1e.Encode(a)
 	if err != nil {
-		return jsError(err)
+		return fail(err)
 	}
 	eb, err := sh1e.Encode(b)
 	if err != nil {
-		return jsError(err)
+		return fail(err)
 	}
 	return js.ValueOf(map[string]any{"side_a": uint8Array(ea), "side_b": uint8Array(eb), "text": plate.ShareText(in.Payload)})
 }
@@ -140,7 +156,7 @@ func decodeArg(args []js.Value) (plate.Result, error) {
 func exportProgram(this js.Value, args []js.Value) any {
 	r, err := decodeArg(args)
 	if err != nil {
-		return jsError(err)
+		return fail(err)
 	}
 	buf := make([]byte, 0, r.Commands*10)
 	r.Plan(func(c engrave.Command) {
@@ -174,7 +190,7 @@ func exportProgram(this js.Value, args []js.Value) any {
 func exportPreview(this js.Value, args []js.Value) any {
 	r, err := decodeArg(args)
 	if err != nil {
-		return jsError(err)
+		return fail(err)
 	}
 	return plate.Preview(r)
 }
