@@ -172,6 +172,25 @@ on the wire the engraver wants **smaller numbers = faster** (30 fast, 1000
 slow). Defaults: `defaultMoveSpeed = 0.5`, `defaultPrintSpeed = 0.1`
 (`driver.go:40-42`).
 
+## Jig position: where a plate sits on the bed (LIVE-VERIFIED 2026-10-07)
+
+The driver package knows nothing about where the plate is. Upstream applies the jig
+offset in the **Pi platform code**, `cmd/controller/platform_rpi.go` (`engraver.Engrave`):
+
+```go
+const x = 97            // mm from home, every plate
+y := 0                  // Large plate (85x134)
+if sz == SquarePlate { y = 49 }   // Square plate sits centred in the Large slot
+plan = engrave.Offset(x*mm, y*mm, plan)
+```
+
+So plate coordinates `(0,0)` (plate top-left, with the 3 mm `outerMargin` inside that) map to
+bed `(97, 0)` for a Large plate and `(97, 49)` for a Square one; `safePoint (119, 43)` is
+therefore *on the plate's far side*, clear of the mounting nuts. A plan run without this
+offset traces the right shape on the wrong part of the bed — which is exactly what happened
+on the first dry run from a Mac on 2026-10-07; with it, the pen-up outline framed the mounted
+plate. `cmd/hammer` carries the table and `-offset x,y` for anything else.
+
 ## Plate geometry
 
 ### Coordinate system
