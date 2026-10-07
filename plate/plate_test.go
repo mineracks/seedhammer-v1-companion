@@ -95,7 +95,9 @@ func TestSVGPathParsesSubsetAndFlattensCurves(t *testing.T) {
 
 func TestShareDesignFitsALargePlate(t *testing.T) {
 	// a realistic envelope share: ~410 bytes of CBOR (ciphertext of the descriptor + one SSKR share)
-	payload := make([]byte, 410)
+	// 589 bytes: a three-key descriptor encrypted as TEXT, which is what Any Two Keys' real
+	// shares came out at on 2026-10-07 (the first cut, sized for 410, refused it)
+	payload := make([]byte, 589)
 	for i := range payload {
 		payload[i] = byte(i*7 + 3)
 	}
@@ -103,7 +105,7 @@ func TestShareDesignFitsALargePlate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(a.QRBlocks) != 1 || a.QRBlocks[0].ModuleTenths != 9 {
+	if len(a.QRBlocks) != 1 || a.QRBlocks[0].ModuleTenths < 6 {
 		t.Fatalf("side A qr %+v", a.QRBlocks)
 	}
 	for name, d := range map[string]sh1e.Design{"A": a, "B": b} {
@@ -128,7 +130,11 @@ func TestShareDesignFitsALargePlate(t *testing.T) {
 			t.Fatal("preview has no strokes")
 		}
 	}
-	back, err := ParseShareText(strings.ToLower(b.TextBlocks[3].Text + "\n" + b.TextBlocks[4].Text + b.TextBlocks[5].Text))
+	var typed []string // everything after the three header lines, as someone typing it back would enter it
+	for _, tb := range b.TextBlocks[3:] {
+		typed = append(typed, strings.ToLower(tb.Text))
+	}
+	back, err := ParseShareText(strings.Join(typed, "\n"))
 	if err != nil || string(back) != string(payload) {
 		t.Fatalf("text side does not round-trip: %v (%d bytes)", err, len(back))
 	}

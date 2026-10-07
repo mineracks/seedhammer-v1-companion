@@ -27,9 +27,15 @@ import (
 const (
 	ShareTitleSizePt = 9 // 3 mm
 	ShareTextSizePt  = 9 // 3 mm: 32 characters per line at the stroke font's width
-	shareLineGapMM   = 1
 	shareQRModuleBig = 9 // tenths of a mm; falls back to 6 when the code would not fit
 )
+
+// Text lines are set at a pitch equal to the font size, with no extra gap, as upstream sets its
+// UR text (backup.go: offy+lineno*fontSize). The glyphs only fill ~70% of the em, so lines stay
+// apart. A 589-byte share (a three-key descriptor encrypted as text) is 943 base32 characters:
+// 30 lines at 3 mm is 90 mm, which fits an SH-03 with the header; with a 1 mm gap it needed
+// 143 mm and was refused on 2026-10-07. Longer shares step the text down to 2.6 then 2.3 mm.
+var shareTextSizesPt = []uint16{ShareTextSizePt, 8, 7}
 
 // Share is one share as the layout needs it.
 type Share struct {
@@ -115,42 +121,48 @@ func ShareDesign(s Share) (sideA, sideB sh1e.Design, err error) {
 		return sideA, sideB, fmt.Errorf("side A overflows the plate")
 	}
 
-	// ---- side B: the text
-	sideB = sh1e.Design{PlateType: sh1e.LargePlate}
-	blocks, y = header()
-	sideB.TextBlocks = blocks
+	// ---- side B: the text, at the largest size that fits
 	text := ShareText(s.Payload)
 	cw, _, _ := constant.Font.Decode('W')
-	charMM := float64(cw) * float64(ShareTextSizePt) * 0.33 / float64(constant.Font.Metrics().Height)
-	perLine := int(maxW / charMM)
-	lineH := int16(math.Ceil(float64(ShareTextSizePt)*0.33)) + shareLineGapMM
-	// one text block per up-to-256-byte chunk, lines joined with newlines: the block cap
-	// is on bytes, and the stroke font draws '\n' as a line break
-	var chunk []string
-	flush := func() {
-		if len(chunk) == 0 {
-			return
+	var need int16
+	for _, pt := range shareTextSizesPt {
+		sideB = sh1e.Design{PlateType: sh1e.LargePlate}
+		blocks, y = header()
+		sideB.TextBlocks = blocks
+		charMM := float64(cw) * float64(pt) * 0.33 / float64(constant.Font.Metrics().Height)
+		perLine := int(maxW / charMM)
+		pitch := float64(pt) * 0.33
+		// one text block per up-to-256-byte chunk, lines joined with newlines: the block cap
+		// is on bytes, and the stroke font draws '\n' as a line break at one em per line
+		var chunk []string
+		top := float64(y)
+		lines := 0
+		flush := func() {
+			if len(chunk) == 0 {
+				return
+			}
+			sideB.TextBlocks = append(sideB.TextBlocks, sh1e.TextBlock{FontID: sh1e.FontConstant, Size: pt, XMM: InnerMarginMM, YMM: int16(math.Round(top + float64(lines)*pitch)), Alignment: sh1e.AlignLeft, Text: strings.Join(chunk, "\n")})
+			lines += len(chunk)
+			chunk = nil
 		}
-		sideB.TextBlocks = append(sideB.TextBlocks, sh1e.TextBlock{FontID: sh1e.FontConstant, Size: ShareTextSizePt, XMM: InnerMarginMM, YMM: y, Alignment: sh1e.AlignLeft, Text: strings.Join(chunk, "\n")})
-		y += lineH * int16(len(chunk))
-		chunk = nil
-	}
-	for t := text; t != ""; {
-		n := perLine
-		if n > len(t) {
-			n = len(t)
+		for t := text; t != ""; {
+			n := perLine
+			if n > len(t) {
+				n = len(t)
+			}
+			if len(strings.Join(chunk, "\n"))+n+1 > sh1e.MaxTextBytes {
+				flush()
+			}
+			chunk = append(chunk, t[:n])
+			t = t[n:]
 		}
-		if len(strings.Join(chunk, "\n"))+n+1 > sh1e.MaxTextBytes {
-			flush()
+		flush()
+		need = int16(math.Ceil(top + float64(lines)*pitch))
+		if need <= int16(dims.Y-InnerMarginMM) && len(sideB.TextBlocks) <= sh1e.MaxTextBlocks {
+			return sideA, sideB, nil
 		}
-		chunk = append(chunk, t[:n])
-		t = t[n:]
 	}
-	flush()
-	if y > int16(dims.Y-InnerMarginMM) {
-		return sideA, sideB, fmt.Errorf("share text needs %d mm, the plate has %d: %d bytes is too long for one SH-03", y, dims.Y-InnerMarginMM, len(s.Payload))
-	}
-	return sideA, sideB, nil
+	return sideA, sideB, fmt.Errorf("share text needs %d mm even at 2.3 mm letters, the plate has %d: %d bytes is too long for one SH-03", need, dims.Y-InnerMarginMM, len(s.Payload))
 }
 
 func clip(s string, n int) string {
