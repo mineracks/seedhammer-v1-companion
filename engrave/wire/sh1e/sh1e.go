@@ -20,7 +20,8 @@ import (
 var Magic = [4]byte{'S', 'H', '1', 'E'}
 
 // Version is the current envelope version. Bump on any breaking change.
-const Version uint8 = 0x01
+// 0x02 (2026-10-07): QR blocks (key 5) joined the design and the fingerprint.
+const Version uint8 = 0x02
 
 // envelopeOverhead is the fixed-size header before the CBOR payload:
 // 4 magic + 1 version + 2 payload_len + 4 crc32 = 11.
@@ -32,14 +33,18 @@ const MaxPayloadBytes = 65535
 // ─── Domain limits (from spec § Validation) ───────────────────────────────
 
 const (
-	MaxTextBlocks      = 32
-	MaxTextBytes       = 256
-	MaxSvgPaths        = 16
-	MaxSvgPathDLength  = 4096
-	MinFontSizePoints  = 1
-	MaxFontSizePoints  = 200
-	MinScalePercent    = 1
-	MaxScalePercent    = 1000
+	MaxTextBlocks     = 32
+	MaxTextBytes      = 256
+	MaxSvgPaths       = 16
+	MaxSvgPathDLength = 4096
+	MinFontSizePoints = 1
+	MaxFontSizePoints = 200
+	MinScalePercent   = 1
+	MaxScalePercent   = 1000
+	MaxQRBlocks       = 8
+	MaxQRDataBytes    = 2953 // QR version 40, level L
+	MinQRModuleTenths = 3    // 0.3 mm = one needle stroke; unreadable, but the floor
+	MaxQRModuleTenths = 30
 )
 
 // ─── Public enums ─────────────────────────────────────────────────────────
@@ -108,22 +113,37 @@ type SvgPath struct {
 	Rotation uint16 `cbor:"5,keyasint,omitempty"`
 }
 
+// QRBlock places a QR code on the plate. Data is what the code carries (a share, a
+// descriptor, anything); the Pi encodes it at engrave time with the given error-correction
+// level and module size, so the same bytes always give the same code. Module size is in
+// tenths of a millimetre: 6 is upstream's 0.6 mm; 9 (0.9 mm) is what a Pi camera reads
+// comfortably off hammered metal for codes past version 10.
+type QRBlock struct {
+	XMM          int16  `cbor:"1,keyasint"`
+	YMM          int16  `cbor:"2,keyasint"`
+	ModuleTenths uint8  `cbor:"3,keyasint"`
+	Level        uint8  `cbor:"4,keyasint"` // 0 L, 1 M, 2 Q, 3 H
+	Data         []byte `cbor:"5,keyasint"`
+}
+
 // Design is the high-level plate intent the composer hands to the Pi.
 type Design struct {
 	PlateType  PlateType   `cbor:"1,keyasint"`
 	TextBlocks []TextBlock `cbor:"2,keyasint"`
 	SvgPaths   []SvgPath   `cbor:"3,keyasint,omitempty"`
-	// Fingerprint is SHA-256 of the canonical CBOR of fields 1-3 (with
+	// Fingerprint is SHA-256 of the canonical CBOR of fields 1-3 and 5 (with
 	// field 4 omitted). Set by Encode; verified by Decode.
-	Fingerprint [32]byte `cbor:"4,keyasint"`
+	Fingerprint [32]byte  `cbor:"4,keyasint"`
+	QRBlocks    []QRBlock `cbor:"5,keyasint,omitempty"`
 }
 
 // designForFingerprint is Design without the Fingerprint field — used to
-// hash the deterministic-CBOR bytes of fields 1-3 only.
+// hash the deterministic-CBOR bytes of the content fields only.
 type designForFingerprint struct {
 	PlateType  PlateType   `cbor:"1,keyasint"`
 	TextBlocks []TextBlock `cbor:"2,keyasint"`
 	SvgPaths   []SvgPath   `cbor:"3,keyasint,omitempty"`
+	QRBlocks   []QRBlock   `cbor:"5,keyasint,omitempty"`
 }
 
 // ─── Codec ────────────────────────────────────────────────────────────────
@@ -184,6 +204,7 @@ func Encode(d Design) ([]byte, error) {
 		PlateType:  d.PlateType,
 		TextBlocks: d.TextBlocks,
 		SvgPaths:   d.SvgPaths,
+		QRBlocks:   d.QRBlocks,
 	}
 	fpBytes, err := canonicalEncMode.Marshal(fp)
 	if err != nil {
@@ -263,6 +284,7 @@ func Decode(b []byte) (Design, error) {
 		PlateType:  d.PlateType,
 		TextBlocks: d.TextBlocks,
 		SvgPaths:   d.SvgPaths,
+		QRBlocks:   d.QRBlocks,
 	}
 	fpBytes, err := canonicalEncMode.Marshal(fp)
 	if err != nil {
@@ -323,6 +345,27 @@ func (d Design) validatePreEncode() error {
 		if err := sp.validate(); err != nil {
 			return fmt.Errorf("svg path %d: %w", i, err)
 		}
+	}
+	if len(d.QRBlocks) > MaxQRBlocks {
+		return fmt.Errorf("%w: %d qr blocks, max %d", ErrTooManyBlocks, len(d.QRBlocks), MaxQRBlocks)
+	}
+	for i, q := range d.QRBlocks {
+		if err := q.validate(); err != nil {
+			return fmt.Errorf("qr block %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+func (q QRBlock) validate() error {
+	if q.ModuleTenths < MinQRModuleTenths || q.ModuleTenths > MaxQRModuleTenths {
+		return fmt.Errorf("%w: module_tenths %d (allowed %d-%d)", ErrOutOfRange, q.ModuleTenths, MinQRModuleTenths, MaxQRModuleTenths)
+	}
+	if q.Level > 3 {
+		return fmt.Errorf("%w: qr level %d", ErrInvalidEnum, q.Level)
+	}
+	if len(q.Data) == 0 || len(q.Data) > MaxQRDataBytes {
+		return fmt.Errorf("%w: qr data %d bytes (allowed 1-%d)", ErrOutOfRange, len(q.Data), MaxQRDataBytes)
 	}
 	return nil
 }
